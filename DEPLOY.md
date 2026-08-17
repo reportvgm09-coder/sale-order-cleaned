@@ -130,8 +130,11 @@ Now look at the list of files on the left.
 
 Now wait. This takes about five minutes.
 
-> **The API will fail. That is expected.** It does not know your database
-> details yet. Step 5 fixes it. Carry on.
+> **The API will fail, with a long red error ending in something like
+> `RuntimeError: APP_PASSWORD_HASH is not set`. That is expected and correct.**
+>
+> It has no login details yet, and it refuses to run without one. Steps 5 and 6
+> fix it. Carry on.
 
 ---
 
@@ -303,7 +306,9 @@ before. Both use the same database, so both show the same orders.
 | Website shows sign-in but nothing loads after | Wait a minute — the API is waking up. Still nothing? Recheck Step 7, then Deploy latest commit again. |
 | "Could not reach the backend" | The API is asleep, or Step 7's address has a typo or a `/` on the end. |
 | Sign-in says wrong password | `APP_PASSWORD_HASH` was pasted incomplete. It is very long — copy the whole thing again from Step 2. |
-| API page won't open at all | Open sale-order-api → **Logs**. If it mentions `APP_PASSWORD_HASH`, Step 6 was missed. If it mentions SSL or a timeout, redo Part 3. |
+| Red error saying `APP_PASSWORD_HASH is not set` | Normal before Step 6. Add the four values and save. The message names exactly which one is missing. |
+| Red error mentioning SSL or a timeout | The database is refusing the connection. Redo Part 3. |
+| API page won't open at all | Open sale-order-api → **Logs** and read the last few lines — the message says what is wrong. |
 | Website build failed | Open the log. Anything else — send me the last 20 lines and I will tell you what it means. |
 
 Stuck anywhere? Tell me the step number and what you see on screen.

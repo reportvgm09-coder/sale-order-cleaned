@@ -36,17 +36,31 @@ AUTH_PASSWORD_HASH = os.environ.get("APP_PASSWORD_HASH", "").strip()
 JWT_SECRET = os.environ.get("JWT_SECRET", "").strip()
 TOKEN_DAYS = int(os.environ.get("TOKEN_DAYS", "30"))
 
-if not AUTH_PASSWORD_HASH or not JWT_SECRET:
+_missing = [
+    name
+    for name, value in (("APP_PASSWORD_HASH", AUTH_PASSWORD_HASH), ("JWT_SECRET", JWT_SECRET))
+    if not value
+]
+if _missing:
     # Refusing to start is deliberate. A "no password configured" fallback is
     # exactly how an app ends up publicly readable without anyone noticing.
+    # Name only what is actually missing - listing both when one is already
+    # set sends people hunting for a problem that isn't there.
+    _names = " and ".join(_missing)
+    _present = [n for n in ("APP_PASSWORD_HASH", "JWT_SECRET") if n not in _missing]
     raise RuntimeError(
         "\n"
         "  ==========================================================\n"
-        "    APP_PASSWORD_HASH and JWT_SECRET are not set, so the\n"
-        "    server will not start - it will not run without a login.\n"
+        f"    {_names} {'is' if len(_missing) == 1 else 'are'} not set, so the server\n"
+        "    will not start - it will not run without a login.\n"
+        + (f"\n    {_present[0]} is already set. Leave it as it is.\n" if _present else "")
+        + "\n"
+        f"    Set {'it' if len(_missing) == 1 else 'them'} in ONE of these places:\n"
         "\n"
-        "    On your PC:  double-click set-password.bat\n"
-        "    On Render:   set them under Environment for this service\n"
+        "      On your PC   double-click set-password.bat\n"
+        "      On Render    open this service, click Environment,\n"
+        f"                   then Add Environment Variable for {_names}.\n"
+        "                   Get the value from show-hosting-values.bat\n"
         "  ==========================================================\n"
     )
 
