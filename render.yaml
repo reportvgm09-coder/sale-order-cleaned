@@ -1,0 +1,84 @@
+# Render Blueprint - creates both services in one go.
+#
+# In Render: New > Blueprint > pick this repository. Render reads this file and
+# creates the API and the website. You then fill in the values marked
+# "sync: false" under each service's Environment tab.
+#
+# See DEPLOY.md in this folder for the full walkthrough.
+
+services:
+  # ---------------------------------------------------------------- API ----
+  - type: web
+    name: sale-order-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # Your MongoDB Atlas connection string - the same one in backend/.env
+      - key: MONGO_URL
+        sync: false
+
+      - key: DB_NAME
+        value: sale_order_db
+
+      # Login. Generate these by running:  set-password.bat --print-only
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD_HASH
+        sync: false
+
+      # Signs your login token. Render generates a strong random value.
+      # Changing it later signs you out everywhere, which is the point.
+      - key: JWT_SECRET
+        generateValue: true
+
+      # The address of the website below. Set this once the site exists,
+      # e.g. https://sale-order-web.onrender.com
+      # Leave it unset and any site can call your API.
+      - key: CORS_ORIGINS
+        sync: false
+
+  # ------------------------------------------------------------ website ----
+  - type: web
+    name: sale-order-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: yarn install --network-timeout 600000 && yarn build
+    staticPublishPath: build
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+
+      # Render sets CI=true, and Create React App treats every lint warning as a
+      # build failure when CI is true. Without this the build fails on an unused
+      # import. This does not disable anything you need.
+      - key: CI
+        value: "false"
+
+      # The address of the API service above, with no trailing slash,
+      # e.g. https://sale-order-api.onrender.com
+      # This is baked in at build time - change it and you must redeploy.
+      - key: REACT_APP_BACKEND_URL
+        sync: false
+    routes:
+      # React Router handles the URLs, so every path must serve index.html.
+      # Without this, refreshing on /customers/CUST-1234 gives a 404.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin

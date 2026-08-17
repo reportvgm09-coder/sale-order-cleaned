@@ -1,0 +1,66 @@
+@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800,900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 210 20% 98%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 222 100% 33%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 20% 96%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 20% 96%;
+        --muted-foreground: 215 16% 40%;
+        --accent: 222 100% 96%;
+        --accent-foreground: 222 100% 33%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 220 14% 80%;
+        --input: 220 14% 78%;
+        --ring: 222 100% 33%;
+        --radius: 0.25rem;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    h1, h2, h3, .font-display {
+        font-family: "Cabinet Grotesk", "IBM Plex Sans", sans-serif;
+    }
+    .font-mono, .tabular-nums {
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+::selection {
+    background: hsl(222 100% 33% / 0.15);
+}
+
+@media print {
+    .no-print { display: none !important; }
+    body { background: #fff; }
+    main { max-width: none !important; padding: 0 !important; }
+    [class*="shadow"] { box-shadow: none !important; }
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+}

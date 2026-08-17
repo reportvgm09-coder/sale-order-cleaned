@@ -1,0 +1,18 @@
+# Runs a local MongoDB instance for development.
+# This does NOT run the app itself - just the database.
+# Start it with:  docker compose up -d
+# Stop it with:   docker compose down
+# (add "-v" to also wipe stored data: docker compose down -v)
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: sale-order-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:

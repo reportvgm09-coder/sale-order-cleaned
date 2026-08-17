@@ -1,0 +1,19 @@
+# What the app actually needs to run.
+#
+# This list used to carry pandas, numpy, boto3, mypy, black and more - none of
+# which the app imports. They were adding several minutes and a few hundred MB
+# to every deploy. Development-only tools now live in requirements-dev.txt.
+
+fastapi==0.110.1
+uvicorn==0.25.0
+python-dotenv>=1.0.1
+
+# database - [srv] pulls in dnspython, needed for mongodb+srv:// Atlas addresses
+motor==3.3.1
+pymongo[srv]==4.6.3
+
+pydantic>=2.6.4
+
+# login: password hashing and session tokens
+bcrypt==4.1.3
+pyjwt>=2.10.1

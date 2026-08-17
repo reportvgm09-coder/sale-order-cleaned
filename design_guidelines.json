@@ -1,0 +1,69 @@
+{
+  "project_name": "Order Ledger Redesign",
+  "theme": "Light theme (optimal for data-heavy operational dashboards)",
+  "typography": {
+    "headings": "Cabinet Grotesk",
+    "body_and_data": "IBM Plex Sans",
+    "rules": [
+      "Do not use Inter, Roboto, or Open Sans for headings.",
+      "Limit H1 size to text-3xl or text-4xl with tracking-tight to maintain a compact, data-friendly dashboard look.",
+      "Use 'tabular-nums' class for all numerical and currency data to ensure perfect vertical alignment.",
+      "Table headers and small labels must be uppercase, text-xs, tracking-[0.2em] (tracking-widest)."
+    ]
+  },
+  "colors": {
+    "archetype": "SWISS & HIGH-CONTRAST (Modified for Operational Clarity)",
+    "palette": {
+      "background": "#F9FAFB",
+      "surface": "#FFFFFF",
+      "primary": "#002FA7",
+      "primary_hover": "#002277",
+      "border": "#E5E7EB",
+      "text_primary": "#111827",
+      "text_secondary": "#4B5563"
+    },
+    "status_badges": {
+      "pending": "bg-amber-100 text-amber-800 border-amber-200",
+      "partial": "bg-blue-100 text-blue-800 border-blue-200",
+      "done": "bg-emerald-100 text-emerald-800 border-emerald-200"
+    },
+    "rules": [
+      "No full-screen gradients. Rely on stark contrast and crisp borders.",
+      "Never use transparent backgrounds for overlapping elements like sticky headers, modals, or dropdowns. Always use solid white or a heavily blurred glassmorphism with high opacity."
+    ]
+  },
+  "grids_and_layouts": {
+    "dashboard_grid": "Use grid-cols-1 md:grid-cols-2 xl:grid-cols-4 with gap-4 or gap-6 for summary stat cards.",
+    "spacing": "Generous spacing within cards (p-4 to p-6) to avoid text collision, maintaining a breathable but dense data layout.",
+    "surfaces": "Flat backgrounds, 1px solid border (border-gray-200), max 4px border-radius (rounded-sm). Avoid soft/muddy drop shadows; use shadow-sm only on hover or floating layers."
+  },
+  "components": {
+    "navigation": "Top navigation or left sidebar containing 4 tabs: Dashboard, Sale Orders, Dispatch Orders, Masters.",
+    "tables": "Use Shadcn UI tables. Implement compact cell padding, a distinct header row (bg-gray-50), and hover states for rows (hover:bg-gray-50).",
+    "forms": "Multi-column grid layouts for main forms, and a full-width dynamic table for line-items. The 'Add Item' button should be visibly distinct.",
+    "badges": "Pill-shaped, text-xs font-semibold for indicating order/dispatch statuses."
+  },
+  "visual_enhancers": {
+    "icons": "Use @phosphor-icons/react. 'Regular' weight for standard icons, 'Duotone' for large empty state or stat card icons.",
+    "motion": "Keep it snappy. Minimal motion. Simple transition-colors and slight -translate-y-px on cards.",
+    "currency": "All monetary values MUST use Indian Rupee (₹) and Indian number formatting (e.g., ₹ 1,23,456.00)."
+  },
+  "accessibility": [
+    "All text must meet APCA/WCAG AA contrast standards.",
+    "Interactive elements must have high-contrast focus rings (focus:ring-2 focus:ring-primary focus:outline-none)."
+  ],
+  "instructions_to_main_agent": [
+    "Rebuild the application using React (.js/.jsx, NOT TypeScript) + Tailwind CSS + FastAPI.",
+    "Use Shadcn UI components for complex inputs (Select for Customer/Brand/Salesman dropdowns, Dialog for modals).",
+    "Add 'data-testid' attributes to ALL interactive elements (buttons, inputs, dropdowns) for testing automation.",
+    "Implement Indian Rupee formatting globally via Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).",
+    "Handle empty states gracefully on all tables (Dashboard lists, Sale Orders, Dispatches).",
+    "Ensure dynamic line items compute the 'Amount' automatically (Rate * Qty) and display a live total at the bottom of the form."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "Do not apply generic 'transition: all'. Explicitly state transition properties.",
+    "Do not center-align the main app container; text reading flow must remain left-aligned for data.",
+    "Hover states must explicitly set text color to ensure visibility (e.g., hover:bg-primary hover:text-white).",
+    "Use 'sonner' for all toast notifications (e.g., success/error on saves and exports)."
+  ]
+}
