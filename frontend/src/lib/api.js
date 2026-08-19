@@ -1,6 +1,19 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Be forgiving about how the address was pasted in. A trailing slash would
+// otherwise produce "https://host//api", which does not route, and pasting the
+// address with "/api" already on the end would produce "/api/api".
+const RAW_BACKEND_URL = (process.env.REACT_APP_BACKEND_URL || "").trim();
+const BACKEND_URL = RAW_BACKEND_URL.replace(/\/+$/, "").replace(/\/api$/i, "");
+
+if (!BACKEND_URL) {
+  // eslint-disable-next-line no-console
+  console.error(
+    "REACT_APP_BACKEND_URL is not set, so the app has no API to talk to. " +
+      "Set it on the website service, then deploy again - it is baked in at build time."
+  );
+}
+
 export const API = `${BACKEND_URL}/api`;
 
 const client = axios.create({ baseURL: API });

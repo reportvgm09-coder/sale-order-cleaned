@@ -84,6 +84,15 @@ AnotherLongMessOfLettersAndNumbers...
 Don't worry that the password looks like nonsense — that is the point. It is
 scrambled and cannot be turned back into your password.
 
+> ⚠️ **Copy every character, right to the end.**
+>
+> These values often end in a **dot** or a **slash**. That is part of the
+> value, not punctuation. Leaving it off will stop you signing in.
+>
+> The window tells you how many characters each one is. `APP_PASSWORD_HASH`
+> should always be **60**. After pasting it into Render, check it still
+> shows 60.
+
 ---
 
 ## Step 3: Put your code on GitHub
@@ -173,16 +182,56 @@ type the name in the first box, paste the value in the second box.
 
 Click **Save changes**. Render starts again on its own. Wait a few minutes.
 
-✅ **You should see:** a green **Live** label at the top.
+✅ **You should see:** a green **Live** label near the top.
 
-Now click the address at the top of the page. A page opens showing:
+---
 
-```json
-{"message":"Order Ledger API","status":"ok"}
+### Step 6b: Check it works, and note down its address
+
+This part trips people up, so slowly:
+
+**1. Find the address.** On the **sale-order-api** page, look just under the
+service name at the top left. There is a small web address there, in grey.
+It looks like:
+
+```
+https://sale-order-api.onrender.com
 ```
 
-That means the API is working. **Copy that address from your browser bar.**
-Remove the `/` at the end if there is one.
+That is your API's address. It is a link.
+
+**2. Click it.** A new browser tab opens.
+
+**3. Check what that new tab says.** It should show a short line like:
+
+```json
+{"message":"Order Ledger API","status":"ok", ...}
+```
+
+That is not an error. Seeing it means the API is alive and answering. It is
+meant to look plain — this page is for machines, not people.
+
+> **If you see `{"detail":"Not Found"}` instead**, the API is still working
+> fine — you have just landed on a page that does not exist. Add `/api/` to
+> the end of the address and press Enter:
+>
+> `https://sale-order-api.onrender.com/api/`
+>
+> (This happens on older versions. Once you push the latest code, the plain
+> address answers too.)
+
+**4. Copy the address.** In that new tab, click once in the browser's address
+bar at the very top, select all of it, and copy (Ctrl+C).
+
+> ⚠️ Copy the **plain** address — `https://sale-order-api.onrender.com`
+>
+> If you added `/api/` to look at the status page, take it off again. The app
+> adds `/api` by itself.
+
+**5. Keep it somewhere.** Paste it into Notepad, or just leave that tab open.
+**You need this address in Step 7, and nowhere else.**
+
+> Don't worry if it ends with a slash — the app tidies that up for you.
 
 ---
 
@@ -194,7 +243,10 @@ Add one thing:
 
 | Name to type | What to paste |
 |---|---|
-| `REACT_APP_BACKEND_URL` | The API address you just copied |
+| `REACT_APP_BACKEND_URL` | The API address you copied in Step 6b |
+
+So you are telling the website: "when you need data, go and ask this address."
+That is the only link between your two services.
 
 Click **Save changes**.
 
@@ -307,6 +359,8 @@ before. Both use the same database, so both show the same orders.
 | "Could not reach the backend" | The API is asleep, or Step 7's address has a typo or a `/` on the end. |
 | Sign-in says wrong password | `APP_PASSWORD_HASH` was pasted incomplete. It is very long — copy the whole thing again from Step 2. |
 | Red error saying `APP_PASSWORD_HASH is not set` | Normal before Step 6. Add the four values and save. The message names exactly which one is missing. |
+| Step 6b shows `{"detail":"Not Found"}` | The API is fine. Add `/api/` to the end of the address. |
+| Step 6b shows a Render error page | The API is still starting, or it crashed. Wait a minute and refresh. Still failing? Open **Logs** and read the last few lines. |
 | Red error mentioning SSL or a timeout | The database is refusing the connection. Redo Part 3. |
 | API page won't open at all | Open sale-order-api → **Logs** and read the last few lines — the message says what is wrong. |
 | Website build failed | Open the log. Anything else — send me the last 20 lines and I will tell you what it means. |

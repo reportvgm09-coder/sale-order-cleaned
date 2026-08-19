@@ -85,21 +85,27 @@ The app opens at `http://localhost:3000` and talks to the backend at the
 
 ---
 
-## 5. Running the tests (optional)
+## 5. Checking a change works
 
-Backend tests live in `backend/tests` and use pytest:
+There is no test suite. Verification is done by running the app and using it,
+and — for anything with arithmetic in it — by pulling the real function out of
+the shipped file and running it against known numbers.
 
-```bash
-cd backend
-pytest
-```
+The parts most worth checking that way, because a wrong answer there looks
+plausible rather than broken:
+
+- dispatched value, which is computed in four separate places that must agree
+- dispatches saved before amounts existed, which fall back to the order's rates
+- expense summary totals, which must equal the sum of the rows they sit under
+
+`CLAUDE.md` explains why each of those matters.
 
 ---
 
 ## Project structure
 
 ```
-backend/    FastAPI app (server.py), requirements.txt, tests
+backend/    FastAPI app (server.py), requirements.txt
 frontend/   React app (craco + Tailwind + shadcn/radix components)
 memory/     Original product requirements doc (PRD.md) from the build process
 docker-compose.yml   Local MongoDB for development

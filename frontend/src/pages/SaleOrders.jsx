@@ -46,14 +46,17 @@ export default function SaleOrders() {
   const [mode, setMode] = useState("single"); // "single" = one order at a time, "fast" = grid pad
   const { requireUnlock } = useAuth();
 
-  // Shared by both entry modes so the customer list only ever updates in one place.
+  // Shared by both entry modes so a master list only ever updates in one place.
+  // The key in `masters` is the master type itself, so this covers all of them.
   // Returns null if the near-duplicate warning made the user think again.
-  const createCustomer = async (name, city) => {
-    const c = await addMasterConfirmed("customers", { name, city });
-    if (!c) return null;
-    setMasters((m) => ({ ...m, customers: [...m.customers, c].sort((a, b) => a.name.localeCompare(b.name)) }));
-    return c;
+  const createMaster = async (type, payload) => {
+    const rec = await addMasterConfirmed(type, payload);
+    if (!rec) return null;
+    setMasters((m) => ({ ...m, [type]: [...m[type], rec].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return rec;
   };
+
+  const createCustomer = (name, city) => createMaster("customers", { name, city });
 
   const addCustomer = async () => {
     if (!newCust.name.trim() || !newCust.city.trim()) return toast.error("Name and city are required");
@@ -342,7 +345,7 @@ export default function SaleOrders() {
       </div>
 
       {mode === "fast" && (
-        <FastOrderEntry masters={masters} onSaved={load} onCreateCustomer={createCustomer} />
+        <FastOrderEntry masters={masters} onSaved={load} onCreateMaster={createMaster} />
       )}
 
       {/* Form */}

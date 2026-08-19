@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/Auth";
 import { Layout } from "@/components/Layout";
 import Dashboard from "@/pages/Dashboard";
 import SaleOrders from "@/pages/SaleOrders";
+import Orders from "@/pages/Orders";
 import DispatchOrders from "@/pages/DispatchOrders";
 import Reports from "@/pages/Reports";
 import Expenses from "@/pages/Expenses";
@@ -22,6 +23,7 @@ function App() {
             <Route path="/" element={<Layout />}>
               <Route index element={<Dashboard />} />
               <Route path="sale-orders" element={<SaleOrders />} />
+              <Route path="orders" element={<Orders />} />
               <Route path="dispatch-orders" element={<DispatchOrders />} />
               <Route path="customers" element={<CustomersList />} />
               <Route path="customers/:id" element={<CustomerHistory />} />

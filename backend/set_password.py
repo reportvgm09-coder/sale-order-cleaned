@@ -55,14 +55,25 @@ if args.show:
         print()
         sys.exit(1)
     print("  Copy each of these into Render, one at a time.")
-    print("  Copy the WHOLE line under each name - they are long.")
+    print("  Copy the WHOLE line under each name, from the first character")
+    print("  to the last. A dot or a slash at the end IS part of the value.")
     print()
     for k, v in saved.items():
-        print(f"  ---- {k} ----")
+        print(f"  ---- {k}   ({len(v)} characters) ----")
         print(f"  {v}")
         print()
-    print("  Keep this window open while you paste them.")
-    print("  Nothing here is your actual password - it cannot be reversed.")
+    # A correct bcrypt hash is always exactly 60 characters and starts with $2
+    if not (saved["APP_PASSWORD_HASH"].startswith("$2") and len(saved["APP_PASSWORD_HASH"]) == 60):
+        print("  [!] APP_PASSWORD_HASH does not look complete.")
+        print("      It should be exactly 60 characters and start with $2b$.")
+        print("      Run set-password.bat again to make a fresh one.")
+        print()
+    else:
+        print("  APP_PASSWORD_HASH looks complete: 60 characters, starts with $2b$.")
+        print("  After pasting into Render, check it still shows 60 characters.")
+        print()
+    print("  Keep this window open while you paste.")
+    print("  None of this is your actual password - it cannot be reversed.")
     sys.exit(0)
 
 print()

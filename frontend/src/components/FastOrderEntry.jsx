@@ -13,12 +13,17 @@ import { toast } from "sonner";
 import { Plus, X, Check, ChevronsUpDown, Save, Zap } from "lucide-react";
 
 // Order IDs are generated up front so you can see them on the pad before saving.
-// The counter keeps two rows created in the same millisecond from colliding.
-let seq = 0;
+//
+// 3 characters of clock + 3 of counter. The counter gives 46,656 distinct
+// values, so IDs cannot repeat within a session no matter how fast rows are
+// added - an earlier version wrapped after 1,296 and did collide. It starts at
+// a random point so two separate sessions don't march in step either. The
+// database also refuses a duplicate id outright, as a last line of defence.
+let seq = Math.floor(Math.random() * 46656);
 const genOrderId = () => {
-  seq = (seq + 1) % 1296;
-  const stamp = Date.now().toString(36).toUpperCase().slice(-4);
-  return `SO-${stamp}${seq.toString(36).toUpperCase().padStart(2, "0")}`;
+  seq = (seq + 1) % 46656;
+  const stamp = Date.now().toString(36).toUpperCase().slice(-3);
+  return `SO-${stamp}${seq.toString(36).toUpperCase().padStart(3, "0")}`;
 };
 
 let rowKey = 0;
@@ -35,60 +40,105 @@ const blankLine = () => ({
 
 const isBlank = (l) => !l.customer_id && !l.brand_id && !l.qty && !l.dispatch_date;
 
-function CustomerPicker({ customers, value, onChange, onCreate, disabled, testid }) {
+const MASTER_LABEL = {
+  customers: "customer",
+  brands: "brand",
+  exhibitions: "exhibition",
+  salesmen: "salesman",
+  seasons: "season",
+};
+
+/**
+ * Searchable picker for any master list, with "Add new" built in - so a name
+ * that does not exist yet never sends you off to the Masters page and back,
+ * losing the row you were typing.
+ *
+ * The Add button sits below the list rather than only appearing when nothing
+ * matches: "Raj" needs adding just as often when "Rajesh" is already there.
+ */
+function MasterPicker({
+  items,
+  value,
+  onChange,
+  onCreate,
+  placeholder,
+  addLabel,
+  search,
+  suffix,
+  disabled,
+  triggerClass = "",
+  testid,
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const selected = customers.find((c) => c.id === value);
+  const selected = items.find((i) => i.id === value);
+
+  const create = () => {
+    onCreate(query);
+    setOpen(false);
+  };
+
+  // Drop the search text on the way out, or reopening shows a list still
+  // narrowed by whatever was typed last time and looks half empty.
+  const change = (v) => {
+    setOpen(v);
+    if (!v) setQuery("");
+  };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={change}>
       <PopoverTrigger asChild>
         <Button
           data-testid={testid}
           variant="outline"
           role="combobox"
           disabled={disabled}
-          className="h-9 w-full justify-between rounded-sm px-2 font-normal"
+          className={`h-9 w-full justify-between rounded-sm px-2 font-normal ${triggerClass}`}
         >
-          <span className={`truncate ${selected ? "" : "text-muted-foreground"}`}>{selected ? selected.name : "Customer…"}</span>
+          <span className={`truncate ${selected ? "" : "text-muted-foreground"}`}>
+            {selected ? selected.name : placeholder}
+          </span>
           <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 rounded-sm p-0" align="start">
         <Command>
-          <CommandInput placeholder="Type a name…" value={query} onValueChange={setQuery} />
+          <CommandInput placeholder="Type to search…" value={query} onValueChange={setQuery} />
           <CommandList>
-            <CommandEmpty>
-              <button
-                type="button"
-                data-testid="fast-customer-create"
-                onClick={() => {
-                  onCreate(query);
-                  setOpen(false);
-                }}
-                className="w-full px-3 py-2 text-left text-sm font-semibold text-primary hover:underline"
-              >
-                + Add “{query || "new customer"}”
-              </button>
+            <CommandEmpty className="px-3 py-2 text-left text-sm text-muted-foreground">
+              No {addLabel} matches “{query}”.
             </CommandEmpty>
             <CommandGroup>
-              {customers.map((c) => (
+              {items.map((i) => (
                 <CommandItem
-                  key={c.id}
-                  value={`${c.name} ${c.city || ""}`}
+                  key={i.id}
+                  value={search ? search(i) : i.name}
                   onSelect={() => {
-                    onChange(c.id);
+                    onChange(i);
                     setOpen(false);
                   }}
                 >
-                  <Check className={`mr-2 h-3.5 w-3.5 ${c.id === value ? "opacity-100" : "opacity-0"}`} />
-                  <span className="truncate">{c.name}</span>
-                  {c.city ? <span className="ml-1 truncate text-xs text-muted-foreground">· {c.city}</span> : null}
+                  <Check className={`mr-2 h-3.5 w-3.5 shrink-0 ${i.id === value ? "opacity-100" : "opacity-0"}`} />
+                  <span className="truncate">{i.name}</span>
+                  {suffix && suffix(i) ? (
+                    <span className="ml-1 shrink-0 text-xs text-muted-foreground">{suffix(i)}</span>
+                  ) : null}
                 </CommandItem>
               ))}
             </CommandGroup>
           </CommandList>
         </Command>
+        <div className="border-t border-border p-1">
+          <button
+            type="button"
+            data-testid={`${testid}-create`}
+            onClick={create}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm font-semibold text-primary hover:bg-secondary"
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{query ? `Add “${query}”` : `Add new ${addLabel}`}</span>
+          </button>
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -96,7 +146,7 @@ function CustomerPicker({ customers, value, onChange, onCreate, disabled, testid
 
 const COLS = "grid-cols-[112px_minmax(150px,1.3fr)_140px_minmax(150px,1.3fr)_84px_96px_110px_92px]";
 
-export default function FastOrderEntry({ masters, onSaved, onCreateCustomer }) {
+export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
   const [header, setHeader] = useState({
     order_date: today(),
     event_type: "exhibition",
@@ -107,23 +157,25 @@ export default function FastOrderEntry({ masters, onSaved, onCreateCustomer }) {
   // lazy initialiser - otherwise blankLine() would run on every render,
   // burning order IDs for rows that are never used
   const [lines, setLines] = useState(() => [blankLine(), blankLine(), blankLine()]);
-  const [newCust, setNewCust] = useState(null); // { rowKey, name, city }
+  // { type, name, city, rate, apply } - `apply` drops the created record into
+  // whichever field asked for it, so one dialog serves every picker.
+  const [newMaster, setNewMaster] = useState(null);
   const [savingAll, setSavingAll] = useState(false);
 
   const setLine = (key, patch) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const addLine = () => setLines((ls) => [...ls, blankLine()]);
   const removeLine = (key) => setLines((ls) => (ls.length === 1 ? [blankLine()] : ls.filter((l) => l.key !== key)));
 
-  const selectBrand = (key, brandId) => {
-    const b = masters.brands.find((x) => x.id === brandId);
+  // Used both when picking an existing brand and when one is created on the
+  // spot, so the brand's rate fills the row the same way either way.
+  const applyBrand = (key, brand) =>
     setLines((ls) =>
       ls.map((l) => {
         if (l.key !== key) return l;
         const rateEmpty = l.rate === "" || l.rate == null || Number(l.rate) === 0;
-        return { ...l, brand_id: brandId, rate: rateEmpty && b?.rate ? b.rate : l.rate };
+        return { ...l, brand_id: brand.id, rate: rateEmpty && brand.rate ? brand.rate : l.rate };
       })
     );
-  };
 
   const pending = lines.filter((l) => l.status !== "saved");
   const savedCount = lines.filter((l) => l.status === "saved").length;
@@ -202,18 +254,23 @@ export default function FastOrderEntry({ masters, onSaved, onCreateCustomer }) {
 
   const clearSaved = () => setLines((ls) => (ls.some((l) => l.status !== "saved") ? ls.filter((l) => l.status !== "saved") : [blankLine()]));
 
-  const openNewCustomer = (key, name) => setNewCust({ rowKey: key, name: name || "", city: "" });
+  const openNewMaster = (type, name, apply) => setNewMaster({ type, name: name || "", city: "", rate: "", apply });
 
-  const submitNewCustomer = async () => {
-    const name = (newCust.name || "").trim();
-    const city = (newCust.city || "").trim();
-    if (!name || !city) return toast.error("Name and city are both required");
+  const submitNewMaster = async () => {
+    const { type, apply } = newMaster;
+    const name = (newMaster.name || "").trim();
+    const city = (newMaster.city || "").trim();
+    if (!name) return toast.error(`Enter a ${MASTER_LABEL[type]} name`);
+    if (type === "customers" && !city) return toast.error("City is required for customers");
+    const payload = { name };
+    if (type === "customers") payload.city = city;
+    if (type === "brands" && String(newMaster.rate).trim() !== "") payload.rate = Number(newMaster.rate) || 0;
     try {
-      const c = await onCreateCustomer(name, city);
-      if (!c) return; // near-duplicate warning declined - leave the box open to edit the name
-      setLine(newCust.rowKey, { customer_id: c.id });
-      setNewCust(null);
-      toast.success(`${c.name} added`);
+      const rec = await onCreateMaster(type, payload);
+      if (!rec) return; // near-duplicate warning declined - leave the box open to edit the name
+      apply(rec);
+      setNewMaster(null);
+      toast.success(`${rec.name} added`);
     } catch (e) {
       toast.error(apiErr(e));
     }
@@ -256,32 +313,48 @@ export default function FastOrderEntry({ masters, onSaved, onCreateCustomer }) {
         {header.event_type === "exhibition" ? (
           <div>
             <Label className="text-xs uppercase tracking-widest">Exhibition</Label>
-            <Select value={header.exhibition_id} onValueChange={(v) => setHeader({ ...header, exhibition_id: v })}>
-              <SelectTrigger data-testid="fast-exhibition" className="mt-1 h-9 rounded-sm border-2 bg-background"><SelectValue placeholder="Select exhibition" /></SelectTrigger>
-              <SelectContent>
-                {masters.exhibitions.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <MasterPicker
+              testid="fast-exhibition"
+              items={masters.exhibitions}
+              value={header.exhibition_id}
+              placeholder="Select exhibition"
+              addLabel="exhibition"
+              triggerClass="mt-1 border-2 bg-background"
+              onChange={(x) => setHeader((h) => ({ ...h, exhibition_id: x.id }))}
+              onCreate={(name) =>
+                openNewMaster("exhibitions", name, (rec) => setHeader((h) => ({ ...h, exhibition_id: rec.id })))
+              }
+            />
           </div>
         ) : (
           <div>
             <Label className="text-xs uppercase tracking-widest">Sales Man</Label>
-            <Select value={header.salesman_id} onValueChange={(v) => setHeader({ ...header, salesman_id: v })}>
-              <SelectTrigger data-testid="fast-salesman" className="mt-1 h-9 rounded-sm border-2 bg-background"><SelectValue placeholder="Select salesman" /></SelectTrigger>
-              <SelectContent>
-                {masters.salesmen.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <MasterPicker
+              testid="fast-salesman"
+              items={masters.salesmen}
+              value={header.salesman_id}
+              placeholder="Select salesman"
+              addLabel="salesman"
+              triggerClass="mt-1 border-2 bg-background"
+              onChange={(x) => setHeader((h) => ({ ...h, salesman_id: x.id }))}
+              onCreate={(name) =>
+                openNewMaster("salesmen", name, (rec) => setHeader((h) => ({ ...h, salesman_id: rec.id })))
+              }
+            />
           </div>
         )}
         <div>
           <Label className="text-xs uppercase tracking-widest">Season</Label>
-          <Select value={header.season_id} onValueChange={(v) => setHeader({ ...header, season_id: v })}>
-            <SelectTrigger data-testid="fast-season" className="mt-1 h-9 rounded-sm border-2 bg-background"><SelectValue placeholder="Select season" /></SelectTrigger>
-            <SelectContent>
-              {masters.seasons.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <MasterPicker
+            testid="fast-season"
+            items={masters.seasons}
+            value={header.season_id}
+            placeholder="Select season"
+            addLabel="season"
+            triggerClass="mt-1 border-2 bg-background"
+            onChange={(x) => setHeader((h) => ({ ...h, season_id: x.id }))}
+            onCreate={(name) => openNewMaster("seasons", name, (rec) => setHeader((h) => ({ ...h, season_id: rec.id })))}
+          />
         </div>
       </div>
 
@@ -310,13 +383,19 @@ export default function FastOrderEntry({ masters, onSaved, onCreateCustomer }) {
               >
                 <div className="truncate font-mono text-xs font-semibold" title={l.id}>{l.id}</div>
 
-                <CustomerPicker
+                <MasterPicker
                   testid={`fast-customer-${idx}`}
-                  customers={masters.customers}
+                  items={masters.customers}
                   value={l.customer_id}
                   disabled={saved}
-                  onChange={(id) => setLine(l.key, { customer_id: id })}
-                  onCreate={(name) => openNewCustomer(l.key, name)}
+                  placeholder="Customer…"
+                  addLabel="customer"
+                  search={(c) => `${c.name} ${c.city || ""}`}
+                  suffix={(c) => (c.city ? `· ${c.city}` : "")}
+                  onChange={(c) => setLine(l.key, { customer_id: c.id })}
+                  onCreate={(name) =>
+                    openNewMaster("customers", name, (rec) => setLine(l.key, { customer_id: rec.id }))
+                  }
                 />
 
                 <Input
@@ -328,12 +407,17 @@ export default function FastOrderEntry({ masters, onSaved, onCreateCustomer }) {
                   className="h-9 rounded-sm"
                 />
 
-                <Select value={l.brand_id} onValueChange={(v) => selectBrand(l.key, v)} disabled={saved}>
-                  <SelectTrigger data-testid={`fast-brand-${idx}`} className="h-9 rounded-sm"><SelectValue placeholder="Brand" /></SelectTrigger>
-                  <SelectContent>
-                    {masters.brands.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}{b.rate ? ` · ₹${b.rate}` : ""}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <MasterPicker
+                  testid={`fast-brand-${idx}`}
+                  items={masters.brands}
+                  value={l.brand_id}
+                  disabled={saved}
+                  placeholder="Brand"
+                  addLabel="brand"
+                  suffix={(b) => (b.rate ? `· ₹${b.rate}` : "")}
+                  onChange={(b) => applyBrand(l.key, b)}
+                  onCreate={(name) => openNewMaster("brands", name, (rec) => applyBrand(l.key, rec))}
+                />
 
                 <Input
                   data-testid={`fast-qty-${idx}`}
@@ -421,33 +505,61 @@ export default function FastOrderEntry({ masters, onSaved, onCreateCustomer }) {
         </div>
       </div>
 
-      <Dialog open={!!newCust} onOpenChange={(v) => !v && setNewCust(null)}>
-        <DialogContent className="max-w-sm rounded-sm border-2 border-border" data-testid="fast-new-customer-dialog">
+      <Dialog open={!!newMaster} onOpenChange={(v) => !v && setNewMaster(null)}>
+        <DialogContent className="max-w-sm rounded-sm border-2 border-border" data-testid="fast-new-master-dialog">
           <DialogHeader>
-            <DialogTitle className="font-display">New Customer</DialogTitle>
-            <DialogDescription>Add them without leaving the pad. City is required.</DialogDescription>
+            <DialogTitle className="font-display">
+              New {newMaster ? MASTER_LABEL[newMaster.type] : "record"}
+            </DialogTitle>
+            <DialogDescription>
+              {newMaster?.type === "customers"
+                ? "Add them without leaving the pad. City is required."
+                : "Add it without leaving the pad. It joins the Masters list straight away."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input
-              data-testid="fast-new-customer-name"
+              data-testid="fast-new-master-name"
               autoFocus
-              value={newCust?.name || ""}
-              onChange={(e) => setNewCust({ ...newCust, name: e.target.value })}
-              placeholder="Customer name"
+              value={newMaster?.name || ""}
+              onChange={(e) => setNewMaster({ ...newMaster, name: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && newMaster?.type !== "customers" && submitNewMaster()}
+              placeholder={`${MASTER_LABEL[newMaster?.type] || "Record"} name`}
               className="rounded-sm border-2"
             />
-            <Input
-              data-testid="fast-new-customer-city"
-              value={newCust?.city || ""}
-              onChange={(e) => setNewCust({ ...newCust, city: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && submitNewCustomer()}
-              placeholder="City"
-              className="rounded-sm border-2"
-            />
+            {newMaster?.type === "customers" && (
+              <Input
+                data-testid="fast-new-master-city"
+                value={newMaster?.city || ""}
+                onChange={(e) => setNewMaster({ ...newMaster, city: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && submitNewMaster()}
+                placeholder="City"
+                className="rounded-sm border-2"
+              />
+            )}
+            {newMaster?.type === "brands" && (
+              <div>
+                <Input
+                  data-testid="fast-new-master-rate"
+                  type="number"
+                  min="0"
+                  value={newMaster?.rate ?? ""}
+                  onChange={(e) => setNewMaster({ ...newMaster, rate: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && submitNewMaster()}
+                  placeholder="Default rate (optional)"
+                  className="rounded-sm border-2"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Fills the rate box on any row you pick this brand for. Leave it blank to type the rate each time.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setNewCust(null)} className="rounded-sm">Cancel</Button>
-            <Button data-testid="fast-new-customer-save" onClick={submitNewCustomer} className="rounded-sm">Add Customer</Button>
+            <Button variant="ghost" onClick={() => setNewMaster(null)} className="rounded-sm">Cancel</Button>
+            <Button data-testid="fast-new-master-save" onClick={submitNewMaster} className="rounded-sm">
+              Add {newMaster ? MASTER_LABEL[newMaster.type] : ""}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

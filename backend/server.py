@@ -1222,6 +1222,21 @@ async def root():
     return {"message": "Order Ledger API", "status": "ok"}
 
 
+@app.get("/")
+async def service_root():
+    """The bare service address, e.g. https://sale-order-api.onrender.com
+
+    Anyone checking whether the API is alive will click that before anything
+    else, so it answers instead of returning a bare 404. Carries no data and
+    needs no login - it says nothing a stranger could not already guess.
+    """
+    return {
+        "message": "Order Ledger API",
+        "status": "ok",
+        "hint": "This is the API, not the app. Open your website address instead.",
+    }
+
+
 app.include_router(auth_router)
 app.include_router(api_router)
 

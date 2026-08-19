@@ -1,2 +1,33 @@
-# Auto detect text files and perform LF normalization
+# How Git should treat line endings in this project.
+#
+# Windows ends lines with CRLF; Linux and Mac use LF. Git stores one form and
+# gives you the other on checkout. Without this file it guesses, which is why
+# GitHub Desktop warns about "LF will be converted to CRLF".
+#
+# Nothing here changes how the app behaves. It just stops the warnings and
+# makes the result the same on every machine.
+
+# Store all text files with LF inside the repository, and hand you back
+# whatever your own system prefers.
 * text=auto
+
+# Windows batch files must keep CRLF. Some Windows versions mis-read a .bat
+# saved with LF endings and stop part-way through with no clear error.
+# These are the files you double-click, so this one matters.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Files that must stay exactly as they are - Git must never rewrite bytes
+# inside them, or they become corrupt.
+*.xlsx binary
+*.xls  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
