@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiErr } from "@/lib/api";
 import { useAuth } from "@/context/Auth";
-import { inr, num, fmtDate } from "@/lib/format";
+import { inr, num, fmtDate, xlDate, today } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -128,8 +128,8 @@ export default function CustomerHistory() {
       data: filtered,
       columns: [
         { key: "Sale Order", get: (o) => o.id },
-        { key: "Order Date", get: (o) => o.order_date || "" },
-        { key: "Dispatch Date", get: (o) => o.dispatch_date || "" },
+        { key: "Order Date", get: (o) => xlDate(o.order_date) },
+        { key: "Dispatch Date", get: (o) => xlDate(o.dispatch_date) },
         { key: "Event", get: (o) => EVENT_LABEL[o.event_type] || o.event_type || "" },
         { key: "Via", get: (o) => o.exhibition || o.salesman || "" },
         { key: "Season", get: (o) => o.season || "" },
@@ -146,8 +146,8 @@ export default function CustomerHistory() {
       data: filtered.flatMap((o) => (o.items || []).map((it) => ({ o, it }))),
       columns: [
         { key: "Sale Order", get: (x) => x.o.id },
-        { key: "Order Date", get: (x) => x.o.order_date || "" },
-        { key: "Dispatch Date", get: (x) => x.o.dispatch_date || "" },
+        { key: "Order Date", get: (x) => xlDate(x.o.order_date) },
+        { key: "Dispatch Date", get: (x) => xlDate(x.o.dispatch_date) },
         { key: "Event", get: (x) => EVENT_LABEL[x.o.event_type] || x.o.event_type || "" },
         { key: "Via", get: (x) => x.o.exhibition || x.o.salesman || "" },
         { key: "Season", get: (x) => x.o.season || "" },
@@ -164,7 +164,7 @@ export default function CustomerHistory() {
       columns: [
         { key: "Dispatch", get: (x) => x.d.id },
         { key: "Sale Order", get: (x) => x.d.sale_order_id },
-        { key: "Date", get: (x) => x.d.dispatch_date || "" },
+        { key: "Date", get: (x) => xlDate(x.d.dispatch_date) },
         { key: "Brand", get: (x) => x.it.brand },
         { key: "Qty", get: (x) => x.it.qty },
         { key: "Actual Amount (INR)", get: (x) => (x.it.amount == null ? "" : x.it.amount) },
@@ -356,7 +356,7 @@ export default function CustomerHistory() {
         onOpenChange={setExportOpen}
         storageKey="customer-statement"
         title="Export statement"
-        fileName={`statement-${customer.name.replace(/[^a-z0-9]+/gi, "-")}-${new Date().toISOString().slice(0, 10)}.xlsx`}
+        fileName={`statement-${customer.name.replace(/[^a-z0-9]+/gi, "-")}-${today()}.xlsx`}
         sheets={exportSheets}
       />
 

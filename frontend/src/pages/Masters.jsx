@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { addMasterConfirmed } from "@/lib/masters";
 import { readWorkbookRows, downloadSheet } from "@/lib/excel";
-import { inr } from "@/lib/format";
+import { inr, today } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -239,7 +239,11 @@ function BackupPanel() {
     setBusy(true);
     try {
       const data = await api.backup();
-      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      // Local clock, so two backups taken the same evening sort in the order
+      // they were actually taken rather than by UTC.
+      const n = new Date();
+      const hhmmss = [n.getHours(), n.getMinutes(), n.getSeconds()].map((x) => String(x).padStart(2, "0")).join("-");
+      const stamp = `${today()}-${hhmmss}`;
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

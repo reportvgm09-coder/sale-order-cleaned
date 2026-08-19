@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useAuth } from "@/context/Auth";
-import { num, inr, today, fmtDate } from "@/lib/format";
+import { num, inr, today, fmtDate, xlDate } from "@/lib/format";
 import { ExportDialog } from "@/components/ExportDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -171,7 +171,7 @@ export default function DispatchOrders() {
         { key: "Dispatch", get: (x) => x.d.id },
         { key: "Sale Order", get: (x) => x.d.sale_order_id },
         { key: "Customer", get: (x) => customerName(x.d.sale_order_id) },
-        { key: "Date", get: (x) => x.d.dispatch_date || "" },
+        { key: "Date", get: (x) => xlDate(x.d.dispatch_date) },
         { key: "Brand", get: (x) => brandName(x.it.brand_id) },
         { key: "Qty", get: (x) => x.it.qty },
         { key: "Actual Amount", get: (x) => (x.it.amount == null ? "" : x.it.amount) },

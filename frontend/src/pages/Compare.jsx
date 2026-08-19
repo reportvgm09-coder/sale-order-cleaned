@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, apiErr } from "@/lib/api";
-import { inr, num } from "@/lib/format";
+import { inr, num, today } from "@/lib/format";
 import { downloadSheet } from "@/lib/excel";
 import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
@@ -165,7 +165,7 @@ function CompareDatasets({ rows }) {
         return row;
       }),
       "Comparison",
-      `comparison-${primary}-${metric}-${new Date().toISOString().slice(0, 10)}.xlsx`
+      `comparison-${primary}-${metric}-${today()}.xlsx`
     );
     toast.success("Comparison exported");
   };
@@ -434,7 +434,7 @@ function TopMovers({ rows }) {
     downloadSheet(
       movers.map((m) => ({ [entityLabel]: m.name, [`${periodA}`]: m.a, [`${periodB}`]: m.b, Change: m.change, "% Change": Number(m.pct.toFixed(1)) })),
       "Top Movers",
-      `top-movers-${entity}-${metric}-${new Date().toISOString().slice(0, 10)}.xlsx`
+      `top-movers-${entity}-${metric}-${today()}.xlsx`
     );
     toast.success("Movers exported");
   };

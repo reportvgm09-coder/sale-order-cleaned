@@ -92,6 +92,27 @@ empty**, so a head deliberately deleted does not come back.
 `fetch_all()`, which warns at 20k and logs `TRUNCATED` at the 250k ceiling.
 **Never reintroduce a bare `to_list(n)`.**
 
+### Dates are calendar days, and three formats have to agree
+
+Stored as plain `YYYY-MM-DD` - a day, with no time and no timezone. Three rules
+keep that honest, all in `lib/format.js` and `lib/excel.js`:
+
+- `today()` is built from the **local** clock. `toISOString()` is UTC, which
+  before 05:30 in India answers with yesterday - an order typed at 1am was
+  filed a day early, and at a month end in the wrong month entirely.
+- `fmtDate()` splits `YYYY-MM-DD` by hand rather than letting `new Date()`
+  read it as UTC midnight, which prints as the day before west of UTC.
+- `xlDate()` builds the Date for Excel at **UTC** midnight, because that is how
+  ExcelJS converts one to a cell - a local midnight lands a day early. Exports
+  carry real dates with a `dd-mmm-yyyy` format, not text, so Excel can sort,
+  filter and group by month.
+
+Coming back the other way, `sheetDate()` normalises whatever a spreadsheet cell
+holds - a real Date, a bare serial number, or text - to `YYYY-MM-DD`. The
+importer used to read only the text case, so a cell Excel had turned into a real
+date arrived as `"46252.7708"` and was stored as the order date; nothing
+validated it, and `fin_year()` duly reported FY 4624-25.
+
 ### Near-duplicate masters return 409, not 400
 
 Adding "Raj Textile" when "Raj Textiles" exists returns **409** with the

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, apiErr } from "@/lib/api";
-import { inr, num, fmtDate } from "@/lib/format";
+import { inr, num, fmtDate, xlDate, today } from "@/lib/format";
 import { ExportDialog } from "@/components/ExportDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -140,8 +140,8 @@ export default function Dashboard() {
         { key: "Sale Order", get: (o) => o.id },
         { key: "Customer", get: (o) => o.customer },
         { key: "City", get: (o) => o.city || "" },
-        { key: "Order Date", get: (o) => o.order_date || "" },
-        { key: "Dispatch Date", get: (o) => o.dispatch_date || "" },
+        { key: "Order Date", get: (o) => xlDate(o.order_date) },
+        { key: "Dispatch Date", get: (o) => xlDate(o.dispatch_date) },
         { key: "Ordered", get: (o) => o.ordered_qty },
         { key: "Dispatched", get: (o) => o.dispatched_qty },
         { key: "Pending", get: (o) => o.pending_qty },
@@ -341,7 +341,7 @@ export default function Dashboard() {
         open={exportOpen}
         onOpenChange={setExportOpen}
         storageKey="dashboard"
-        fileName={`order-ledger-report-${new Date().toISOString().slice(0, 10)}.xlsx`}
+        fileName={`order-ledger-report-${today()}.xlsx`}
         sheets={exportSheets}
       />
     </div>

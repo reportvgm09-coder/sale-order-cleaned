@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useAuth } from "@/context/Auth";
-import { inr, num, fmtDate, today } from "@/lib/format";
+import { inr, num, fmtDate, today, xlDate } from "@/lib/format";
 import { ExportDialog } from "@/components/ExportDialog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -244,7 +244,7 @@ export default function Expenses() {
       name: "All Entries",
       data: shown.flatMap((e) => (e.items || []).map((it) => ({ e, it }))),
       columns: [
-        { key: "Date", get: (x) => x.e.expense_date || "" },
+        { key: "Date", get: (x) => xlDate(x.e.expense_date) },
         { key: "Against", get: (x) => (x.e.event_type === "door_to_door" ? "Salesman" : "Exhibition") },
         { key: "Name", get: (x) => x.e.exhibition || x.e.salesman || "" },
         { key: "Season", get: (x) => x.e.season || "" },
@@ -279,7 +279,7 @@ export default function Expenses() {
         open={exportOpen}
         onOpenChange={setExportOpen}
         storageKey="expenses"
-        fileName={`expenses-${new Date().toISOString().slice(0, 10)}.xlsx`}
+        fileName={`expenses-${today()}.xlsx`}
         sheets={exportSheets}
       />
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useAuth } from "@/context/Auth";
-import { inr, num } from "@/lib/format";
+import { inr, num, xlDate, today } from "@/lib/format";
 import { downloadMultiSheet } from "@/lib/excel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -162,8 +162,8 @@ export default function Reports() {
         { key: "Exhibition", get: (r) => r.exhibition || "" },
         { key: "Salesman", get: (r) => r.salesman || "" },
         { key: "Season", get: (r) => r.season || "" },
-        { key: "Order Date", get: (r) => r.order_date || "" },
-        { key: "Dispatch Date", get: (r) => r.dispatch_date || "" },
+        { key: "Order Date", get: (r) => xlDate(r.order_date) },
+        { key: "Dispatch Date", get: (r) => xlDate(r.dispatch_date) },
         { key: "Financial Year", get: (r) => r.financial_year || "" },
         { key: "Ordered", get: (r) => r.ordered_qty },
         { key: "Dispatched", get: (r) => r.dispatched_qty },
@@ -399,7 +399,7 @@ export default function Reports() {
         open={exportOpen}
         onOpenChange={setExportOpen}
         storageKey="reports"
-        fileName={`report-${new Date().toISOString().slice(0, 10)}.xlsx`}
+        fileName={`report-${today()}.xlsx`}
         sheets={exportSheets}
       />
 

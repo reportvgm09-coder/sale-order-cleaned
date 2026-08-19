@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, apiErr } from "@/lib/api";
-import { inr, num, fmtDate, today } from "@/lib/format";
+import { inr, num, fmtDate, today, xlDate } from "@/lib/format";
 import { ExportDialog } from "@/components/ExportDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card } from "@/components/ui/card";
@@ -49,11 +49,12 @@ const Meter = ({ pct, bar = "w-16" }) => (
 //           is worked out - a percentage cannot simply be added up.
 const COLUMNS = [
   { key: "id", label: "Order ID", filter: "text", cell: (r) => <span className="font-mono font-semibold">{r.id}</span> },
-  { key: "order_date", label: "Order Date", filter: "date", cell: (r) => fmtDate(r.order_date) },
+  { key: "order_date", label: "Order Date", filter: "date", date: true, cell: (r) => fmtDate(r.order_date) },
   {
     key: "dispatch_date",
     label: "Dispatch By",
     filter: "date",
+    date: true,
     // Overdue is the same rule the dashboard uses: the date has passed and
     // pieces are still owed.
     cell: (r) => <span className={r.overdue ? "font-semibold text-amber-700" : ""}>{fmtDate(r.dispatch_date)}</span>,
@@ -440,8 +441,9 @@ export default function Orders() {
       // dialog has its own tick list and remembers it separately.
       columns: COLUMNS.map((c) => ({
         key: c.label,
-        // Raw dates and raw numbers, so the spreadsheet can sort and total them.
-        get: (r) => r[c.key] ?? "",
+        // Real dates and raw numbers, so the spreadsheet can sort, filter and
+        // total them rather than treating the column as text.
+        get: (r) => (c.date ? xlDate(r[c.key]) : r[c.key] ?? ""),
       })),
     },
   ];

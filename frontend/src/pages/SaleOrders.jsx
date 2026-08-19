@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { addMasterConfirmed } from "@/lib/masters";
 import { useAuth } from "@/context/Auth";
-import { inr, num, today } from "@/lib/format";
-import { readWorkbookRows, downloadTemplateWithLists } from "@/lib/excel";
+import { inr, num, today, xlDate } from "@/lib/format";
+import { readWorkbookRows, downloadTemplateWithLists, sheetDate } from "@/lib/excel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -201,8 +201,8 @@ export default function SaleOrders() {
         { key: "Sale Order", get: (x) => x.o.id },
         { key: "Customer", get: (x) => nameOf("customers", x.o.customer_id) },
         { key: "City", get: (x) => cityOf(x.o.customer_id) },
-        { key: "Order Date", get: (x) => x.o.order_date || "" },
-        { key: "Dispatch Date", get: (x) => x.o.dispatch_date || "" },
+        { key: "Order Date", get: (x) => xlDate(x.o.order_date) },
+        { key: "Dispatch Date", get: (x) => xlDate(x.o.dispatch_date) },
         { key: "Event Type", get: (x) => (x.o.event_type === "door_to_door" ? "Door to Door" : "Exhibition") },
         { key: "Exhibition", get: (x) => nameOf("exhibitions", x.o.exhibition_id) },
         { key: "Salesman", get: (x) => nameOf("salesmen", x.o.salesman_id) },
@@ -220,7 +220,7 @@ export default function SaleOrders() {
       columns: [
         { key: "Sale Order", get: (o) => o.id },
         { key: "Customer", get: (o) => nameOf("customers", o.customer_id) },
-        { key: "Order Date", get: (o) => o.order_date || "" },
+        { key: "Order Date", get: (o) => xlDate(o.order_date) },
         { key: "Ordered", get: (o) => o.totals.ordered_qty },
         { key: "Dispatched", get: (o) => o.totals.dispatched_qty },
         { key: "Pending", get: (o) => o.totals.pending_qty },
@@ -269,7 +269,18 @@ export default function SaleOrders() {
           if (eventType === "exhibition" && String(r["Exhibition"] || "").trim()) { exhibition_id = findId("exhibitions", r["Exhibition"]); if (!exhibition_id) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Exhibition "${r["Exhibition"]}" not found — left blank` }); }
           if (eventType === "door_to_door" && String(r["Salesman"] || "").trim()) { salesman_id = findId("salesmen", r["Salesman"]); if (!salesman_id) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Salesman "${r["Salesman"]}" not found — left blank` }); }
           if (String(r["Season"] || "").trim()) { season_id = findId("seasons", r["Season"]); if (!season_id) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Season "${r["Season"]}" not found — left blank` }); }
-          grouped[oid] = { id: oid, order_date: String(r["Order Date"] || "").slice(0, 10) || today(), customer_id, dispatch_date: String(r["Dispatch Date"] || "").slice(0, 10) || null, event_type: eventType, exhibition_id, salesman_id, season_id, items: [] };
+          // A date cell can come through as a real date, a serial number or
+          // text. Reading only the text case stored things like "46252.7708"
+          // as the order date, which nothing downstream could make sense of.
+          const readDate = (label, fallback) => {
+            const raw = r[label];
+            const iso = sheetDate(raw);
+            if (!iso && String(raw ?? "").trim()) {
+              issues.push({ row: rowNo, so: oid, level: "warn", msg: `${label} "${raw}" is not a date — ${fallback ? "today's date used" : "left blank"}` });
+            }
+            return iso || fallback;
+          };
+          grouped[oid] = { id: oid, order_date: readDate("Order Date", today()), customer_id, dispatch_date: readDate("Dispatch Date", null), event_type: eventType, exhibition_id, salesman_id, season_id, items: [] };
         }
         const brandName = String(r["Brand"] || "").trim();
         const brandId = findId("brands", brandName);
