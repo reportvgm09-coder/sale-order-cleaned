@@ -153,6 +153,30 @@ the browser, so filtering never goes back to the server. It deliberately shows
 order value and pending value only - **not** dispatched value, which would have
 made a fifth place computing it.
 
+### The loader plays itself
+
+`components/Loader.jsx` is Space Invaders on a canvas, and it is attract-mode
+first: it plays on its own, an arrow key or the on-screen buttons hand you the
+ship, and six idle seconds hand it back. Nobody should have to play a game to
+see their orders. It knows nothing about the request it is waiting on.
+
+Three things in it look arbitrary and are not:
+
+- The autopilot **aims where the target will be.** The block keeps marching
+  while a shot is in the air, so firing at an invader's current position mostly
+  misses - it cleared barely half a wave a minute before the lead was added.
+- A dodge is **held until that bomb is past.** Deciding afresh each frame reads
+  as a dodge but is not one: the instant the ship is clear the threat looks
+  gone, it steers back, and it dies anyway. Committing took it from roughly
+  eight deaths a minute to under one.
+- `dt` is clamped **at both ends.** The ceiling stops a backgrounded tab
+  handing back a multi-second step that tunnels bullets through invaders; the
+  floor matters because the first frame's timestamp can predate the clock read
+  when the effect ran, and a negative step drives the whole game backwards.
+
+Under `prefers-reduced-motion` it draws one still frame and never starts the
+loop or the key listeners.
+
 ### Export column memory stores what you turned OFF
 
 `ExportDialog` saves the **excluded** columns, not the included ones. If it
@@ -205,6 +229,9 @@ pulling the payload builder out of `FastOrderEntry.jsx`, or importing
 `server.py` with stubbed FastAPI/Motor and an in-memory database. That
 approach caught real bugs (an order-ID generator that wrapped and collided; a
 `customer_history` refactor that had to be proved byte-for-byte identical).
+The loader was checked the same way: Babel the shipped `.jsx` to CommonJS, stub
+the three hooks and a canvas, and drive `requestAnimationFrame` by hand - which
+is also how the frames were rasterised to PNG to look at the sprites.
 
 If you add tests properly, the highest-value ones:
 
