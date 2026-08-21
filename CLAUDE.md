@@ -60,6 +60,39 @@ on several order lines at different rates.
 `/reports` and the expense summary. They must always agree. There is a test
 asserting exactly that. Do not add a fifth without one.
 
+### An order's state is set by hand; its status is not
+
+Two different things, deliberately kept apart. `status` (pending / partial /
+done) is derived from quantity and nothing else. `state` is a decision somebody
+made about the order, one of:
+
+| state | means | effect on the numbers |
+|---|---|---|
+| `open` | the ordinary case | none |
+| `hold` | paused, but still owed | **none** - it stays in every outstanding total |
+| `half` | the "50%" mark | **none** - a label and a row colour, nothing else |
+| `cancelled` | nothing more will ship | stops counting as outstanding |
+
+An order can be half dispatched *and* on hold, which is why one field cannot
+carry both.
+
+Cancelling zeroes pending quantity and pending value, drops the order off the
+dashboard entirely, and makes the dispatch dialog offer nothing - but it never
+touches what already went out. That stock and that money really moved, so
+`ordered_qty`, `amount` and `dispatched_qty` all stay as they were, and a
+cancelled order that was half shipped still reads as `partial`. In the expense
+summary a cancelled order's ordered value is only what actually shipped;
+counting the whole order would park the difference in pending value for good.
+
+The zeroing happens **after** the status is worked out, not before - otherwise
+cancelling an order would flip it to "done".
+
+Every form that saves an order must send `state` back. A PUT that leaves it out
+gets the model default and quietly reopens something somebody had cancelled.
+The colours live in one list in `lib/orderState.js`, so the picker, the badge,
+the row tint and the grid's column filter cannot drift apart. Amber, not
+yellow, for 50%: the pale yellows read as a highlighter rather than mustard.
+
 ### Quantities and money are independent
 
 Order status (pending / partial / done) is driven purely by **quantity**.
@@ -239,6 +272,11 @@ If you add tests properly, the highest-value ones:
 2. Old dispatches with no `amount` still fall back to order rates.
 3. Only login and the two status routes are public.
 4. Expense summary totals equal the sum of their rows, on both bases.
+5. A cancelled order is outstanding nowhere, and hold / 50% change no number.
+
+The order-state work was checked exactly that way - `server.py` imported with
+Motor swapped for an in-memory stub, then the endpoint functions called
+directly (the auth guard is on the router, not on them).
 
 ---
 

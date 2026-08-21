@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Truck, Pencil, Plus, X } from "lucide-react";
+import { ORDER_STATES } from "@/lib/orderState";
 
 // Radix Select cannot use "" as an item value, so a sentinel stands in for "not set".
 const NONE = "__none__";
@@ -141,6 +142,7 @@ export function EditOrderDialog({ order, customer, masters, open, onOpenChange, 
     if (open && order) {
       setDraft({
         order_date: order.order_date || today(),
+        state: order.state || "open",
         dispatch_date: order.dispatch_date || "",
         event_type: order.event_type || "exhibition",
         exhibition_id: toSel(order.exhibition_id),
@@ -217,6 +219,7 @@ export function EditOrderDialog({ order, customer, masters, open, onOpenChange, 
         exhibition_id: draft.event_type === "exhibition" ? fromSel(draft.exhibition_id) : null,
         salesman_id: draft.event_type === "door_to_door" ? fromSel(draft.salesman_id) : null,
         season_id: fromSel(draft.season_id),
+        state: draft.state || "open",
         items,
       });
       toast.success("Sale order updated");
@@ -281,6 +284,15 @@ export function EditOrderDialog({ order, customer, masters, open, onOpenChange, 
               </Select>
             </div>
           )}
+          <div>
+            <Label className="text-xs uppercase tracking-widest">State</Label>
+            <Select value={draft.state} onValueChange={(v) => setField({ state: v })}>
+              <SelectTrigger data-testid="ledger-edit-state" className="mt-1 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ORDER_STATES.map((st) => <SelectItem key={st.key} value={st.key}>{st.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label className="text-xs uppercase tracking-widest">Season</Label>
             <Select value={draft.season_id} onValueChange={(v) => setField({ season_id: v })}>

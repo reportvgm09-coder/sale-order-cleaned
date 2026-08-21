@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatusBadge, Progress } from "@/components/StatusBadge";
+import { StatusBadge, Progress, StateBadge } from "@/components/StatusBadge";
+import { ORDER_STATES, stateFromLabel, stateLabel, stateRowClass } from "@/lib/orderState";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import FastOrderEntry from "@/components/FastOrderEntry";
@@ -29,6 +30,7 @@ const blankDraft = () => ({
   exhibition_id: "",
   salesman_id: "",
   season_id: "",
+  state: "open",
   items: [blankItem()],
 });
 
@@ -149,6 +151,7 @@ export default function SaleOrders() {
       exhibition_id: draft.event_type === "exhibition" ? draft.exhibition_id || null : null,
       salesman_id: draft.event_type === "door_to_door" ? draft.salesman_id || null : null,
       season_id: draft.season_id || null,
+      state: draft.state || "open",
       items,
     };
     try {
@@ -177,6 +180,7 @@ export default function SaleOrders() {
       exhibition_id: o.exhibition_id || "",
       salesman_id: o.salesman_id || "",
       season_id: o.season_id || "",
+      state: o.state || "open",
       items: (o.items || []).map((it) => ({ id: it.id, brand_id: it.brand_id, rate: it.rate, qty: it.qty })),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -212,6 +216,7 @@ export default function SaleOrders() {
         { key: "Qty", get: (x) => x.it.qty },
         { key: "Amount", get: (x) => (Number(x.it.rate) || 0) * (Number(x.it.qty) || 0) },
         { key: "Status", get: (x) => x.o.totals.status },
+        { key: "State", get: (x) => stateLabel(x.o.state) },
       ],
     },
     {
@@ -280,7 +285,9 @@ export default function SaleOrders() {
             }
             return iso || fallback;
           };
-          grouped[oid] = { id: oid, order_date: readDate("Order Date", today()), customer_id, dispatch_date: readDate("Dispatch Date", null), event_type: eventType, exhibition_id, salesman_id, season_id, items: [] };
+          const state = stateFromLabel(r["State"]);
+          if (!state) issues.push({ row: rowNo, so: oid, level: "warn", msg: `State "${r["State"]}" is not one of Open, Hold, 50% or Cancelled — imported as Open` });
+          grouped[oid] = { id: oid, order_date: readDate("Order Date", today()), customer_id, dispatch_date: readDate("Dispatch Date", null), event_type: eventType, exhibition_id, salesman_id, season_id, state: state || "open", items: [] };
         }
         const brandName = String(r["Brand"] || "").trim();
         const brandId = findId("brands", brandName);
@@ -394,6 +401,15 @@ export default function SaleOrders() {
               <SelectTrigger data-testid="so-customer-select" className="mt-1 rounded-sm"><SelectValue placeholder="Select customer" /></SelectTrigger>
               <SelectContent>
                 {masters.customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}{c.city ? ` — ${c.city}` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs uppercase tracking-widest">State</Label>
+            <Select value={draft.state} onValueChange={(v) => setDraft({ ...draft, state: v })}>
+              <SelectTrigger data-testid="so-state" className="mt-1 rounded-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ORDER_STATES.map((st) => <SelectItem key={st.key} value={st.key}>{st.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -612,7 +628,11 @@ export default function SaleOrders() {
             </TableHeader>
             <TableBody>
               {filtered.map((o) => (
-                <TableRow key={o.id} className="hover:bg-secondary/40" data-testid={`so-row-${o.id}`}>
+                <TableRow
+                  key={o.id}
+                  className={stateRowClass(o.state) || "hover:bg-secondary/40"}
+                  data-testid={`so-row-${o.id}`}
+                >
                   <TableCell>
                     <Checkbox data-testid={`so-select-${o.id}`} checked={selected.includes(o.id)} onCheckedChange={() => toggleSel(o.id)} />
                   </TableCell>
@@ -622,7 +642,12 @@ export default function SaleOrders() {
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.totals.pending_qty)}</TableCell>
                   <TableCell><Progress ordered={o.totals.ordered_qty} dispatched={o.totals.dispatched_qty} /></TableCell>
                   <TableCell className="text-right tabular-nums">{inr(o.totals.amount)}</TableCell>
-                  <TableCell><StatusBadge status={o.totals.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusBadge status={o.totals.status} />
+                      <StateBadge state={o.state} />
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button data-testid={`so-edit-${o.id}`} variant="ghost" size="icon" className="h-8 w-8" onClick={() => requireUnlock(() => startEdit(o))}>

@@ -252,8 +252,16 @@ class LineItem(BaseModel):
     qty: float = 0
 
 
+# What has been decided about an order, by hand. Deliberately separate from the
+# derived status (pending / partial / done), which is only ever about quantity -
+# an order can be half dispatched and on hold at the same time.
+#   open       nothing special
+#   hold       paused, but still owed - it stays in every outstanding total
+#   half       the "50%" mark. A label only: no quantity or money changes
+#   cancelled  nothing more will ship, so it stops counting as outstanding
 class SaleOrderIn(BaseModel):
     id: str
+    state: Literal["open", "hold", "half", "cancelled"] = "open"
     order_date: Optional[str] = None
     customer_id: Optional[str] = None
     dispatch_date: Optional[str] = None
@@ -385,6 +393,13 @@ def compute_order_totals(order, dispatched):
     else:
         status = "partial"
 
+    # Zeroed after the status is worked out, not before: what is outstanding
+    # changes, what already happened does not. A cancelled order that was half
+    # dispatched still reads as partial, and still owns that dispatch.
+    if (order.get("state") or "open") == "cancelled":
+        pending_by_brand = {bid: 0 for bid in pending_by_brand}
+        pending_qty = 0
+
     per_unit = (amount / ordered_qty) if ordered_qty > 0 else 0
     pending_value = per_unit * pending_qty
 
@@ -402,7 +417,8 @@ def compute_order_totals(order, dispatched):
 async def enrich_order(order):
     dispatched = await dispatched_by_brand(order["id"])
     totals = compute_order_totals(order, dispatched)
-    return {**order, "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}}
+    return {**order, "state": order.get("state") or "open",
+            "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}}
 
 
 async def enrich_orders(orders):
@@ -411,7 +427,8 @@ async def enrich_orders(orders):
     result = []
     for o in orders:
         totals = compute_order_totals(o, dispatched_map.get(o["id"], {}))
-        result.append({**o, "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}})
+        result.append({**o, "state": o.get("state") or "open",
+                       "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}})
     return result
 
 
@@ -435,6 +452,7 @@ def build_brand_rows(order, dispatched, brands, detail=None):
     for it in order.get("items", []):
         ordered_bb[it["brand_id"]] = ordered_bb.get(it["brand_id"], 0) + (it.get("qty") or 0)
     rates = brand_rates(order)
+    cancelled = (order.get("state") or "open") == "cancelled"
     rows = []
     for bid, oq in ordered_bb.items():
         disp = min(dispatched.get(bid, 0), oq)
@@ -443,7 +461,7 @@ def build_brand_rows(order, dispatched, brands, detail=None):
             "brand": brands.get(bid, "Unknown"),
             "ordered": oq,
             "dispatched": disp,
-            "pending": max(0, oq - disp),
+            "pending": 0 if cancelled else max(0, oq - disp),
             # so the dispatch form can suggest an amount to start from
             "rate": rates.get(bid, 0),
             "ordered_value": oq * rates.get(bid, 0),
@@ -608,6 +626,7 @@ async def get_sale_order(order_id: str):
     return {
         "order": {
             **o,
+            "state": o.get("state") or "open",
             "exhibition": exhibitions.get(o.get("exhibition_id")),
             "salesman": salesmen.get(o.get("salesman_id")),
             "season": seasons.get(o.get("season_id")),
@@ -666,6 +685,8 @@ async def create_dispatch(body: DispatchIn):
     order = await db.sale_orders.find_one({"id": body.sale_order_id}, {"_id": 0})
     if not order:
         raise HTTPException(400, "Sale order not found")
+    if (order.get("state") or "open") == "cancelled":
+        raise HTTPException(400, "This order is cancelled. Set it back to open before dispatching against it.")
     items = [it.model_dump() for it in body.items if (it.qty or 0) > 0]
     if not items:
         raise HTTPException(400, "Enter at least one dispatch quantity")
@@ -900,9 +921,14 @@ async def expenses_summary(
         if not keep(kind, ref, o.get("season_id"), o.get("order_date")):
             continue
         r = bucket(kind, ref)
+        disp = order_dispatched_value(o, dispatched_map.get(o["id"], {}))
+        # Nothing more is coming from a cancelled order, so only what actually
+        # shipped counts as ordered. Counting the whole order would leave the
+        # difference sitting in pending value for good.
+        gross = disp if (o.get("state") or "open") == "cancelled" else order_gross_value(o)
         r["order_count"] += 1
-        r["order_value"] += order_gross_value(o)
-        r["dispatched_value"] += order_dispatched_value(o, dispatched_map.get(o["id"], {}))
+        r["order_value"] += gross
+        r["dispatched_value"] += disp
 
     pick = "order_value" if basis == "order" else "dispatched_value"
 
@@ -966,6 +992,10 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
             return False
         if city and city_map.get(o.get("customer_id"), "") != city:
             return False
+        # A cancelled order is not work waiting to be done, so it is not on a
+        # dashboard about what is still owed - not even in the order count.
+        if (o.get("state") or "open") == "cancelled":
+            return False
         return True
 
     orders = [o for o in all_orders if keep(o)]
@@ -1001,6 +1031,7 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
                     by_brand[bname] = by_brand.get(bname, 0) + pq
             open_orders.append({
                 "id": o["id"],
+                "state": o.get("state") or "open",
                 "customer": cname,
                 "city": city_map.get(o.get("customer_id"), ""),
                 "order_date": o.get("order_date"),
@@ -1042,6 +1073,7 @@ async def reports():
     for o in orders:
         detail = detail_map.get(o["id"], {})
         dispatched = {bid: d["qty"] for bid, d in detail.items()}
+        state = o.get("state") or "open"
         agg = {}
         for it in o.get("items", []):
             b = it["brand_id"]
@@ -1052,10 +1084,11 @@ async def reports():
             a["amount"] += q * r
         for bid, a in agg.items():
             disp = min(dispatched.get(bid, 0), a["qty"])
-            pending = max(0, a["qty"] - disp)
+            pending = 0 if state == "cancelled" else max(0, a["qty"] - disp)
             per_unit = (a["amount"] / a["qty"]) if a["qty"] > 0 else 0
             rows.append({
                 "sale_order_id": o["id"],
+                "state": state,
                 "order_date": o.get("order_date"),
                 "financial_year": fin_year(o.get("order_date")),
                 "dispatch_date": o.get("dispatch_date"),
@@ -1126,6 +1159,7 @@ async def customer_history(customer_id: str):
         brand_rows = build_brand_rows(o, dispatched, brands, detail)
         orders.append({
             "id": o["id"],
+            "state": o.get("state") or "open",
             "order_date": o.get("order_date"),
             "dispatch_date": o.get("dispatch_date"),
             "event_type": o.get("event_type"),

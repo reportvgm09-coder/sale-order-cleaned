@@ -1,3 +1,5 @@
+import { stateBadgeClass, stateLabel } from "@/lib/orderState";
+
 const MAP = {
   pending: { label: "Pending", cls: "bg-amber-100 text-amber-800 border-amber-200" },
   partial: { label: "Partial", cls: "bg-blue-100 text-blue-800 border-blue-200" },
@@ -12,6 +14,20 @@ export const StatusBadge = ({ status }) => {
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${s.cls}`}
     >
       {s.label}
+    </span>
+  );
+};
+
+/** The hand-set state - hold, 50%, cancelled. Open orders show nothing at all,
+ *  so the mark only ever appears where something was actually decided. */
+export const StateBadge = ({ state }) => {
+  if (!state || state === "open") return null;
+  return (
+    <span
+      data-testid={`state-badge-${state}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${stateBadgeClass(state)}`}
+    >
+      {stateLabel(state)}
     </span>
   );
 };

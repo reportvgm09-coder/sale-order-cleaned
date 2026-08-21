@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { inr, num, fmtDate, xlDate, today } from "@/lib/format";
 import { ExportDialog } from "@/components/ExportDialog";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge, StateBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -322,7 +322,12 @@ export default function Dashboard() {
                   <TableCell className="text-right tabular-nums">{num(o.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.pending_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums">{inr(o.amount)}</TableCell>
-                  <TableCell><StatusBadge status={o.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusBadge status={o.status} />
+                      <StateBadge state={o.state} />
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="open-orders-total-row">

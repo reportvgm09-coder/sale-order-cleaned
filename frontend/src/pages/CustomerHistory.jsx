@@ -7,7 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge, StateBadge } from "@/components/StatusBadge";
+import { stateRowClass } from "@/lib/orderState";
 import { DispatchDialog, EditOrderDialog } from "@/components/OrderDialogs";
 import { ExportDialog } from "@/components/ExportDialog";
 import { toast } from "sonner";
@@ -260,7 +261,11 @@ export default function CustomerHistory() {
             </TableHeader>
             <TableBody>
               {filtered.map((o) => (
-                <TableRow key={o.id} className="hover:bg-secondary/40 align-top" data-testid={`history-order-${o.id}`}>
+                <TableRow
+                  key={o.id}
+                  className={`align-top ${stateRowClass(o.state) || "hover:bg-secondary/40"}`}
+                  data-testid={`history-order-${o.id}`}
+                >
                   <TableCell className="font-mono font-semibold">{o.id}</TableCell>
                   <TableCell className="text-muted-foreground">{fmtDate(o.order_date)}</TableCell>
                   <TableCell className="text-sm">
@@ -274,7 +279,12 @@ export default function CustomerHistory() {
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.totals.pending_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums">{inr(o.totals.amount)}</TableCell>
                   <TableCell className="text-right tabular-nums text-emerald-700">{inr(o.totals.dispatched_value || 0)}</TableCell>
-                  <TableCell><StatusBadge status={o.totals.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusBadge status={o.totals.status} />
+                      <StateBadge state={o.state} />
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right no-print">
                     <div className="flex justify-end gap-1">
                       <Button

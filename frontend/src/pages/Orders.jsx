@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, apiErr } from "@/lib/api";
 import { inr, num, fmtDate, today, xlDate } from "@/lib/format";
+import { stateLabel, stateRowClass } from "@/lib/orderState";
 import { ExportDialog } from "@/components/ExportDialog";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge, StateBadge } from "@/components/StatusBadge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,15 @@ const COLUMNS = [
   { key: "amount", label: "Order Value", filter: "num", align: "right", total: true, money: true, cell: (r) => inr(r.amount) },
   { key: "pending_value", label: "Pending Value", filter: "num", align: "right", total: true, money: true, cell: (r) => inr(r.pending_value) },
   { key: "status", label: "Status", filter: "list", cell: (r) => <StatusBadge status={r.status_key} /> },
+  {
+    key: "state",
+    label: "State",
+    filter: "list",
+    // An open order carries no badge, but the filter still lists "Open" so the
+    // ones nobody has marked can be picked out.
+    cell: (r) =>
+      r.state_key === "open" ? <span className="text-muted-foreground">—</span> : <StateBadge state={r.state_key} />,
+  },
 ];
 
 const EMPTY = { list: [], text: "", num: { min: "", max: "" }, date: { from: "", to: "" } };
@@ -322,6 +332,8 @@ export default function Orders() {
               pending_value: t.pending_value || 0,
               status_key: t.status || "pending",
               status: STATUS_LABEL[t.status] || STATUS_LABEL.pending,
+              state_key: o.state || "open",
+              state: stateLabel(o.state),
               overdue: !!(o.dispatch_date && o.dispatch_date < todayStr && (t.pending_qty || 0) > 0),
             };
           })
@@ -623,7 +635,11 @@ export default function Orders() {
                 </TableRow>
               ) : (
                 sorted.map((r) => (
-                  <TableRow key={r.id} className="hover:bg-secondary/40" data-testid={`orders-row-${r.id}`}>
+                  <TableRow
+                    key={r.id}
+                    className={stateRowClass(r.state_key) || "hover:bg-secondary/40"}
+                    data-testid={`orders-row-${r.id}`}
+                  >
                     {visible.map((c) => (
                       <TableCell
                         key={c.key}
