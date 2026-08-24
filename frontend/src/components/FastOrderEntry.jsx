@@ -46,6 +46,7 @@ const MASTER_LABEL = {
   exhibitions: "exhibition",
   salesmen: "salesman",
   seasons: "season",
+  lines: "line",
 };
 
 /**
@@ -152,6 +153,7 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
     event_type: "exhibition",
     exhibition_id: "",
     salesman_id: "",
+    line_id: "",
     season_id: "",
   });
   // lazy initialiser - otherwise blankLine() would run on every render,
@@ -176,6 +178,9 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
         return { ...l, brand_id: brand.id, rate: rateEmpty && brand.rate ? brand.rate : l.rate };
       })
     );
+
+  // Only the chosen salesman's own trips - another man's Amravati is not this one.
+  const lineOptions = (masters.lines || []).filter((l) => l.salesman_id === header.salesman_id);
 
   const pending = lines.filter((l) => l.status !== "saved");
   const savedCount = lines.filter((l) => l.status === "saved").length;
@@ -205,6 +210,7 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
     event_type: header.event_type,
     exhibition_id: header.event_type === "exhibition" ? header.exhibition_id || null : null,
     salesman_id: header.event_type === "door_to_door" ? header.salesman_id || null : null,
+    line_id: header.event_type === "door_to_door" ? header.line_id || null : null,
     season_id: header.season_id || null,
     items: [{ brand_id: l.brand_id, rate: Number(l.rate) || 0, qty: Number(l.qty) || 0 }],
   });
@@ -254,7 +260,12 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
 
   const clearSaved = () => setLines((ls) => (ls.some((l) => l.status !== "saved") ? ls.filter((l) => l.status !== "saved") : [blankLine()]));
 
-  const openNewMaster = (type, name, apply) => setNewMaster({ type, name: name || "", city: "", rate: "", apply });
+  // `extra` carries fields the picker already knows - a line cannot be created
+  // without the salesman whose header it was opened from.
+  const salesmanName = (id) => (masters.salesmen || []).find((s) => s.id === id)?.name || "this salesman";
+
+  const openNewMaster = (type, name, apply, extra = {}) =>
+    setNewMaster({ type, name: name || "", city: "", rate: "", extra, apply });
 
   const submitNewMaster = async () => {
     const { type, apply } = newMaster;
@@ -262,7 +273,7 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
     const city = (newMaster.city || "").trim();
     if (!name) return toast.error(`Enter a ${MASTER_LABEL[type]} name`);
     if (type === "customers" && !city) return toast.error("City is required for customers");
-    const payload = { name };
+    const payload = { name, ...(newMaster.extra || {}) };
     if (type === "customers") payload.city = city;
     if (type === "brands" && String(newMaster.rate).trim() !== "") payload.rate = Number(newMaster.rate) || 0;
     try {
@@ -289,7 +300,7 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
       </div>
 
       {/* Shared header - applies to every row saved from here */}
-      <div className="grid grid-cols-1 gap-4 rounded-sm border-2 border-border bg-secondary/40 p-4 md:grid-cols-4" data-testid="fast-header">
+      <div className="grid grid-cols-1 gap-4 rounded-sm border-2 border-border bg-secondary/40 p-4 md:grid-cols-3 lg:grid-cols-5" data-testid="fast-header">
         <div>
           <Label className="text-xs uppercase tracking-widest">Order Date</Label>
           <Input
@@ -336,9 +347,33 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
               placeholder="Select salesman"
               addLabel="salesman"
               triggerClass="mt-1 border-2 bg-background"
-              onChange={(x) => setHeader((h) => ({ ...h, salesman_id: x.id }))}
+              onChange={(x) => setHeader((h) => ({ ...h, salesman_id: x.id, line_id: "" }))}
               onCreate={(name) =>
-                openNewMaster("salesmen", name, (rec) => setHeader((h) => ({ ...h, salesman_id: rec.id })))
+                openNewMaster("salesmen", name, (rec) => setHeader((h) => ({ ...h, salesman_id: rec.id, line_id: "" })))
+              }
+            />
+          </div>
+        )}
+        {header.event_type === "door_to_door" && (
+          <div>
+            <Label className="text-xs uppercase tracking-widest">Line</Label>
+            <MasterPicker
+              testid="fast-line"
+              items={lineOptions}
+              value={header.line_id}
+              disabled={!header.salesman_id}
+              placeholder={header.salesman_id ? "Select line" : "Pick a salesman first"}
+              addLabel="line"
+              suffix={(l) => (l.start_date ? `· ${l.start_date}` : "")}
+              triggerClass="mt-1 border-2 bg-background"
+              onChange={(x) => setHeader((h) => ({ ...h, line_id: x.id }))}
+              onCreate={(name) =>
+                openNewMaster(
+                  "lines",
+                  name,
+                  (rec) => setHeader((h) => ({ ...h, line_id: rec.id })),
+                  { salesman_id: header.salesman_id }
+                )
               }
             />
           </div>
@@ -536,6 +571,12 @@ export default function FastOrderEntry({ masters, onSaved, onCreateMaster }) {
                 placeholder="City"
                 className="rounded-sm border-2"
               />
+            )}
+            {newMaster?.type === "lines" && (
+              <p className="rounded-sm border-2 border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                Added under <span className="font-semibold text-foreground">{salesmanName(newMaster.extra?.salesman_id)}</span>.
+                Trip dates can be filled in later on the Masters page.
+              </p>
             )}
             {newMaster?.type === "brands" && (
               <div>

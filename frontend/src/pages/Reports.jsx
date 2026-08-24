@@ -22,6 +22,7 @@ const GROUP_DIMS = [
   { key: "event_type", label: "Event Type" },
   { key: "exhibition", label: "Exhibition" },
   { key: "salesman", label: "Salesman" },
+  { key: "line", label: "Line" },
   { key: "season", label: "Season" },
 ];
 
@@ -30,7 +31,7 @@ const uniq = (arr) => Array.from(new Set(arr.filter(Boolean))).sort();
 export default function Reports() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [f, setF] = useState({ event_type: "all", customer: "all", brand: "all", exhibition: "all", salesman: "all", season: "all", city: "all" });
+  const [f, setF] = useState({ event_type: "all", customer: "all", brand: "all", exhibition: "all", salesman: "all", line: "all", season: "all", city: "all" });
   const [groupBy, setGroupBy] = useState("brand");
   const [masters, setMasters] = useState({ brands: [], exhibitions: [], salesmen: [], seasons: [] });
   const [dialog, setDialog] = useState(null); // { mode: "edit" | "dispatch", order, customer }
@@ -90,6 +91,7 @@ export default function Reports() {
       brand: uniq(rows.map((r) => r.brand)),
       exhibition: uniq(rows.map((r) => r.exhibition)),
       salesman: uniq(rows.map((r) => r.salesman)),
+      line: uniq(rows.map((r) => r.line)),
       season: uniq(rows.map((r) => r.season)),
       city: uniq(rows.map((r) => r.city)),
     }),
@@ -105,6 +107,7 @@ export default function Reports() {
           (f.brand === "all" || r.brand === f.brand) &&
           (f.exhibition === "all" || r.exhibition === f.exhibition) &&
           (f.salesman === "all" || r.salesman === f.salesman) &&
+          (f.line === "all" || r.line === f.line) &&
           (f.season === "all" || r.season === f.season) &&
           (f.city === "all" || r.city === f.city)
       ),
@@ -144,7 +147,7 @@ export default function Reports() {
     return Object.values(map).sort((a, b) => b.amount - a.amount);
   }, [filtered, groupBy]);
 
-  const reset = () => setF({ event_type: "all", customer: "all", brand: "all", exhibition: "all", salesman: "all", season: "all", city: "all" });
+  const reset = () => setF({ event_type: "all", customer: "all", brand: "all", exhibition: "all", salesman: "all", line: "all", season: "all", city: "all" });
   const printReport = () => window.print();
 
   const groupLabel = GROUP_DIMS.find((g) => g.key === groupBy)?.label || "Group";
@@ -161,6 +164,7 @@ export default function Reports() {
         { key: "Event Type", get: (r) => eventLabel(r.event_type) },
         { key: "Exhibition", get: (r) => r.exhibition || "" },
         { key: "Salesman", get: (r) => r.salesman || "" },
+        { key: "Line", get: (r) => r.line || "" },
         { key: "Season", get: (r) => r.season || "" },
         { key: "Order Date", get: (r) => xlDate(r.order_date) },
         { key: "Dispatch Date", get: (r) => xlDate(r.dispatch_date) },
@@ -230,6 +234,7 @@ export default function Reports() {
           <FilterSelect label="Brand" testid="filter-report-brand" value={f.brand} onValueChange={(v) => setF({ ...f, brand: v })} options={opts.brand} />
           <FilterSelect label="Exhibition" testid="filter-report-exhibition" value={f.exhibition} onValueChange={(v) => setF({ ...f, exhibition: v })} options={opts.exhibition} />
           <FilterSelect label="Salesman" testid="filter-report-salesman" value={f.salesman} onValueChange={(v) => setF({ ...f, salesman: v })} options={opts.salesman} />
+          <FilterSelect label="Line" testid="filter-report-line" value={f.line} onValueChange={(v) => setF({ ...f, line: v })} options={opts.line} />
           <FilterSelect label="Season" testid="filter-report-season" value={f.season} onValueChange={(v) => setF({ ...f, season: v })} options={opts.season} />
           <FilterSelect label="City" testid="filter-report-city" value={f.city} onValueChange={(v) => setF({ ...f, city: v })} options={opts.city} />
           <Button data-testid="report-reset-btn" variant="outline" size="sm" onClick={reset} className="h-9 gap-1 rounded-sm">

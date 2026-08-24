@@ -29,6 +29,7 @@ const blankDraft = () => ({
   event_type: "exhibition",
   exhibition_id: "",
   salesman_id: "",
+  line_id: "",
   season_id: "",
   state: "open",
   items: [blankItem()],
@@ -36,7 +37,7 @@ const blankDraft = () => ({
 
 export default function SaleOrders() {
   const [orders, setOrders] = useState([]);
-  const [masters, setMasters] = useState({ customers: [], brands: [], exhibitions: [], salesmen: [], seasons: [] });
+  const [masters, setMasters] = useState({ customers: [], brands: [], exhibitions: [], salesmen: [], seasons: [], lines: [] });
   const [draft, setDraft] = useState(blankDraft());
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState({ customer: "all", status: "all" });
@@ -93,16 +94,17 @@ export default function SaleOrders() {
 
   const load = async () => {
     try {
-      const [o, c, b, e, s, se] = await Promise.all([
+      const [o, c, b, e, s, se, ln] = await Promise.all([
         api.listSaleOrders(),
         api.listMasters("customers"),
         api.listMasters("brands"),
         api.listMasters("exhibitions"),
         api.listMasters("salesmen"),
         api.listMasters("seasons"),
+        api.listMasters("lines"),
       ]);
       setOrders(o);
-      setMasters({ customers: c, brands: b, exhibitions: e, salesmen: s, seasons: se });
+      setMasters({ customers: c, brands: b, exhibitions: e, salesmen: s, seasons: se, lines: ln });
     } catch (err) {
       toast.error(apiErr(err));
     }
@@ -150,6 +152,7 @@ export default function SaleOrders() {
       event_type: draft.event_type,
       exhibition_id: draft.event_type === "exhibition" ? draft.exhibition_id || null : null,
       salesman_id: draft.event_type === "door_to_door" ? draft.salesman_id || null : null,
+      line_id: draft.event_type === "door_to_door" ? draft.line_id || null : null,
       season_id: draft.season_id || null,
       state: draft.state || "open",
       items,
@@ -179,6 +182,7 @@ export default function SaleOrders() {
       event_type: o.event_type || "exhibition",
       exhibition_id: o.exhibition_id || "",
       salesman_id: o.salesman_id || "",
+      line_id: o.line_id || "",
       season_id: o.season_id || "",
       state: o.state || "open",
       items: (o.items || []).map((it) => ({ id: it.id, brand_id: it.brand_id, rate: it.rate, qty: it.qty })),
@@ -210,6 +214,7 @@ export default function SaleOrders() {
         { key: "Event Type", get: (x) => (x.o.event_type === "door_to_door" ? "Door to Door" : "Exhibition") },
         { key: "Exhibition", get: (x) => nameOf("exhibitions", x.o.exhibition_id) },
         { key: "Salesman", get: (x) => nameOf("salesmen", x.o.salesman_id) },
+        { key: "Line", get: (x) => nameOf("lines", x.o.line_id) },
         { key: "Season", get: (x) => nameOf("seasons", x.o.season_id) },
         { key: "Brand", get: (x) => nameOf("brands", x.it.brand_id) },
         { key: "Rate", get: (x) => x.it.rate },
@@ -236,14 +241,17 @@ export default function SaleOrders() {
   ];
 
   const downloadTemplate = () => {
-    const columns = ["Sale Order", "Customer", "City", "Order Date", "Dispatch Date", "Event Type", "Exhibition", "Salesman", "Season", "Brand", "Rate", "Qty"];
-    const sample = ["SO-1001", masters.customers[0]?.name || "Acme Traders", masters.customers[0]?.city || "Mumbai", today(), "", "exhibition", masters.exhibitions[0]?.name || "", "", masters.seasons[0]?.name || "", masters.brands[0]?.name || "Nova Wear", 500, 20];
+    const columns = ["Sale Order", "Customer", "City", "Order Date", "Dispatch Date", "Event Type", "Exhibition", "Salesman", "Line", "Season", "Brand", "Rate", "Qty"];
+    const sample = ["SO-1001", masters.customers[0]?.name || "Acme Traders", masters.customers[0]?.city || "Mumbai", today(), "", "exhibition", masters.exhibitions[0]?.name || "", "", "", masters.seasons[0]?.name || "", masters.brands[0]?.name || "Nova Wear", 500, 20];
     const lists = {
       Customer: masters.customers.map((c) => c.name),
       City: Array.from(new Set(masters.customers.map((c) => c.city).filter(Boolean))),
       "Event Type": ["exhibition", "door_to_door"],
       Exhibition: masters.exhibitions.map((x) => x.name),
       Salesman: masters.salesmen.map((x) => x.name),
+      // Every line, whoever works it - the sheet has no way to narrow the list
+      // to the salesman on the same row, so the import checks that instead.
+      Line: masters.lines.map((x) => x.name),
       Season: masters.seasons.map((x) => x.name),
       Brand: masters.brands.map((b) => b.name),
     };
@@ -270,9 +278,17 @@ export default function SaleOrders() {
           const customer_id = findId("customers", custName);
           if (!customer_id) issues.push({ row: rowNo, so: oid, level: "error", msg: `Customer "${custName || "(blank)"}" not found in Masters` });
           if (existing.has(oid)) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Sale Order "${oid}" already exists — will be skipped` });
-          let exhibition_id = null, salesman_id = null, season_id = null;
+          let exhibition_id = null, salesman_id = null, line_id = null, season_id = null;
           if (eventType === "exhibition" && String(r["Exhibition"] || "").trim()) { exhibition_id = findId("exhibitions", r["Exhibition"]); if (!exhibition_id) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Exhibition "${r["Exhibition"]}" not found — left blank` }); }
           if (eventType === "door_to_door" && String(r["Salesman"] || "").trim()) { salesman_id = findId("salesmen", r["Salesman"]); if (!salesman_id) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Salesman "${r["Salesman"]}" not found — left blank` }); }
+          if (eventType === "door_to_door" && String(r["Line"] || "").trim()) {
+            const wanted = String(r["Line"]).trim().toLowerCase();
+            // Two salesmen can both work an "Amravati", so the name alone is not
+            // enough - it has to be one of this row's salesman's own lines.
+            const mine = masters.lines.filter((l) => l.name.toLowerCase() === wanted && (!salesman_id || l.salesman_id === salesman_id));
+            line_id = mine[0]?.id || null;
+            if (!line_id) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Line "${r["Line"]}" is not one of ${String(r["Salesman"] || "that salesman").trim()}'s lines — left blank` });
+          }
           if (String(r["Season"] || "").trim()) { season_id = findId("seasons", r["Season"]); if (!season_id) issues.push({ row: rowNo, so: oid, level: "warn", msg: `Season "${r["Season"]}" not found — left blank` }); }
           // A date cell can come through as a real date, a serial number or
           // text. Reading only the text case stored things like "46252.7708"
@@ -287,7 +303,7 @@ export default function SaleOrders() {
           };
           const state = stateFromLabel(r["State"]);
           if (!state) issues.push({ row: rowNo, so: oid, level: "warn", msg: `State "${r["State"]}" is not one of Open, Hold, 50% or Cancelled — imported as Open` });
-          grouped[oid] = { id: oid, order_date: readDate("Order Date", today()), customer_id, dispatch_date: readDate("Dispatch Date", null), event_type: eventType, exhibition_id, salesman_id, season_id, state: state || "open", items: [] };
+          grouped[oid] = { id: oid, order_date: readDate("Order Date", today()), customer_id, dispatch_date: readDate("Dispatch Date", null), event_type: eventType, exhibition_id, salesman_id, line_id, season_id, state: state || "open", items: [] };
         }
         const brandName = String(r["Brand"] || "").trim();
         const brandId = findId("brands", brandName);
@@ -434,15 +450,41 @@ export default function SaleOrders() {
               </Select>
             </div>
           ) : (
-            <div>
-              <Label className="text-xs uppercase tracking-widest">Sales Man</Label>
-              <Select value={draft.salesman_id} onValueChange={(v) => setDraft({ ...draft, salesman_id: v })}>
-                <SelectTrigger data-testid="so-salesman-select" className="mt-1 rounded-sm"><SelectValue placeholder="Select salesman" /></SelectTrigger>
-                <SelectContent>
-                  {masters.salesmen.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            <>
+              <div>
+                <Label className="text-xs uppercase tracking-widest">Sales Man</Label>
+                <Select
+                  value={draft.salesman_id}
+                  onValueChange={(v) =>
+                    // A line belongs to one salesman, so changing the man drops
+                    // a line that is no longer his.
+                    setDraft((d) => ({
+                      ...d,
+                      salesman_id: v,
+                      line_id: masters.lines.find((l) => l.id === d.line_id)?.salesman_id === v ? d.line_id : "",
+                    }))
+                  }
+                >
+                  <SelectTrigger data-testid="so-salesman-select" className="mt-1 rounded-sm"><SelectValue placeholder="Select salesman" /></SelectTrigger>
+                  <SelectContent>
+                    {masters.salesmen.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-widest">Line</Label>
+                <Select value={draft.line_id} onValueChange={(v) => setDraft({ ...draft, line_id: v })} disabled={!draft.salesman_id}>
+                  <SelectTrigger data-testid="so-line-select" className="mt-1 rounded-sm">
+                    <SelectValue placeholder={draft.salesman_id ? "Select line" : "Pick a salesman first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {masters.lines
+                      .filter((l) => l.salesman_id === draft.salesman_id)
+                      .map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           )}
           <div>
             <Label className="text-xs uppercase tracking-widest">Season</Label>

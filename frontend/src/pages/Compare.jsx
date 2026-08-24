@@ -26,6 +26,7 @@ const DIMS = [
   { key: "financial_year", label: "Financial Year" },
   { key: "exhibition", label: "Exhibition" },
   { key: "salesman", label: "Salesman" },
+  { key: "line", label: "Line" },
   { key: "event_type", label: "Event Type" },
 ];
 

@@ -26,6 +26,7 @@ const blankDraft = () => ({
   event_type: "exhibition",
   exhibition_id: "",
   salesman_id: "",
+  line_id: "",
   season_id: NONE,
   note: "",
   items: [blankLine(), blankLine()],
@@ -42,7 +43,7 @@ const Stat = ({ label, value, sub, testid, tone }) => (
 export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [masters, setMasters] = useState({ exhibitions: [], salesmen: [], seasons: [], expense_heads: [] });
+  const [masters, setMasters] = useState({ exhibitions: [], salesmen: [], seasons: [], expense_heads: [], lines: [] });
   const [draft, setDraft] = useState(blankDraft());
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,20 +53,24 @@ export default function Expenses() {
     season: "all",
     exhibition: "all",
     salesman: "all",
+    line: "all",
     basis: "order", // order = everything ordered, dispatch = only what shipped
+    // target = a row per exhibition and salesman; line = door-to-door split per trip
+    group: "target",
   });
-  const [view, setView] = useState("all"); // all | exhibition | salesman
+  const [view, setView] = useState("all"); // all | exhibition | salesman | line
   const [exportOpen, setExportOpen] = useState(false);
   const { requireUnlock } = useAuth();
 
   const loadSummary = async (next = f) => {
     try {
-      const params = { basis: next.basis };
+      const params = { basis: next.basis, group: next.group };
       if (next.start) params.start = next.start;
       if (next.end) params.end = next.end;
       if (next.season !== "all") params.season = next.season;
       if (next.exhibition !== "all") params.exhibition = next.exhibition;
       if (next.salesman !== "all") params.salesman = next.salesman;
+      if (next.line !== "all") params.line = next.line;
       setSummary(await api.expenseSummary(params));
     } catch (e) {
       toast.error(apiErr(e));
@@ -74,15 +79,16 @@ export default function Expenses() {
 
   const load = async () => {
     try {
-      const [list, ex, sm, se, hd] = await Promise.all([
+      const [list, ex, sm, se, hd, ln] = await Promise.all([
         api.listExpenses(),
         api.listMasters("exhibitions"),
         api.listMasters("salesmen"),
         api.listMasters("seasons"),
         api.listMasters("expense_heads"),
+        api.listMasters("lines"),
       ]);
       setExpenses(list);
-      setMasters({ exhibitions: ex, salesmen: sm, seasons: se, expense_heads: hd });
+      setMasters({ exhibitions: ex, salesmen: sm, seasons: se, expense_heads: hd, lines: ln });
       await loadSummary();
     } catch (e) {
       toast.error(apiErr(e));
@@ -121,6 +127,7 @@ export default function Expenses() {
       event_type: draft.event_type,
       exhibition_id: draft.event_type === "exhibition" ? draft.exhibition_id : null,
       salesman_id: draft.event_type === "door_to_door" ? draft.salesman_id : null,
+      line_id: draft.event_type === "door_to_door" ? draft.line_id || null : null,
       season_id: fromSel(draft.season_id),
       note: draft.note?.trim() || null,
       items,
@@ -147,6 +154,7 @@ export default function Expenses() {
       event_type: e.event_type || "exhibition",
       exhibition_id: e.exhibition_id || "",
       salesman_id: e.salesman_id || "",
+      line_id: e.line_id || "",
       season_id: toSel(e.season_id),
       note: e.note || "",
       items: (e.items || []).map((it) => ({
@@ -181,7 +189,7 @@ export default function Expenses() {
   };
 
   const resetF = () => {
-    const next = { start: "", end: "", season: "all", exhibition: "all", salesman: "all", basis: "order" };
+    const next = { start: "", end: "", season: "all", exhibition: "all", salesman: "all", line: "all", basis: "order", group: f.group };
     setF(next);
     setView("all");
     loadSummary(next);
@@ -189,8 +197,18 @@ export default function Expenses() {
 
   const activeCount =
     (f.start ? 1 : 0) + (f.end ? 1 : 0) +
-    ["season", "exhibition", "salesman"].filter((k) => f[k] !== "all").length +
+    ["season", "exhibition", "salesman", "line"].filter((k) => f[k] !== "all").length +
     (view !== "all" ? 1 : 0);
+
+  // Every line with its salesman's name, so two "Amravati" entries can be told apart.
+  const lineChoices = useMemo(
+    () =>
+      (masters.lines || []).map((l) => ({
+        ...l,
+        who: masters.salesmen.find((s) => s.id === l.salesman_id)?.name || "",
+      })),
+    [masters.lines, masters.salesmen]
+  );
 
   const rows = useMemo(() => {
     const all = summary?.rows || [];
@@ -207,8 +225,10 @@ export default function Expenses() {
         const isSalesman = x.event_type === "door_to_door";
         if (f.exhibition !== "all" && !(!isSalesman && x.exhibition_id === f.exhibition)) return false;
         if (f.salesman !== "all" && !(isSalesman && x.salesman_id === f.salesman)) return false;
+        if (f.line !== "all" && x.line_id !== f.line) return false;
         if (view === "exhibition" && isSalesman) return false;
         if (view === "salesman" && !isSalesman) return false;
+        if (view === "line" && !isSalesman) return false;
         return true;
       }),
     [expenses, f, view]
@@ -247,6 +267,7 @@ export default function Expenses() {
         { key: "Date", get: (x) => xlDate(x.e.expense_date) },
         { key: "Against", get: (x) => (x.e.event_type === "door_to_door" ? "Salesman" : "Exhibition") },
         { key: "Name", get: (x) => x.e.exhibition || x.e.salesman || "" },
+        { key: "Line", get: (x) => x.e.line || "" },
         { key: "Season", get: (x) => x.e.season || "" },
         { key: "Head", get: (x) => x.it.head },
         { key: "Amount", get: (x) => x.it.amount },
@@ -267,7 +288,7 @@ export default function Expenses() {
         <div>
           <h1 className="font-display text-3xl font-extrabold tracking-tight">Expenses</h1>
           <p className="text-sm text-muted-foreground">
-            What each exhibition and salesman costs you, next to what they brought in.
+            What each exhibition, salesman and line costs you, next to what they brought in.
           </p>
         </div>
         <Button data-testid="expense-export-btn" variant="outline" onClick={() => setExportOpen(true)} className="gap-2 rounded-sm">
@@ -331,15 +352,41 @@ export default function Expenses() {
               </Select>
             </div>
           ) : (
-            <div>
-              <Label className="text-xs uppercase tracking-widest">Salesman</Label>
-              <Select value={draft.salesman_id} onValueChange={(v) => setDraft({ ...draft, salesman_id: v })}>
-                <SelectTrigger data-testid="expense-salesman" className="mt-1 h-9 rounded-sm border-2"><SelectValue placeholder="Select salesman" /></SelectTrigger>
-                <SelectContent>
-                  {masters.salesmen.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            <>
+              <div>
+                <Label className="text-xs uppercase tracking-widest">Salesman</Label>
+                <Select
+                  value={draft.salesman_id}
+                  onValueChange={(v) =>
+                    // A line belongs to one salesman, so changing the man drops
+                    // a line that is no longer his.
+                    setDraft((d) => ({
+                      ...d,
+                      salesman_id: v,
+                      line_id: masters.lines.find((l) => l.id === d.line_id)?.salesman_id === v ? d.line_id : "",
+                    }))
+                  }
+                >
+                  <SelectTrigger data-testid="expense-salesman" className="mt-1 h-9 rounded-sm border-2"><SelectValue placeholder="Select salesman" /></SelectTrigger>
+                  <SelectContent>
+                    {masters.salesmen.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-widest">Line</Label>
+                <Select value={draft.line_id} onValueChange={(v) => setDraft({ ...draft, line_id: v })} disabled={!draft.salesman_id}>
+                  <SelectTrigger data-testid="expense-line" className="mt-1 h-9 rounded-sm border-2">
+                    <SelectValue placeholder={draft.salesman_id ? "Select line" : "Pick a salesman first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {masters.lines
+                      .filter((l) => l.salesman_id === draft.salesman_id)
+                      .map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           )}
           <div>
             <Label className="text-xs uppercase tracking-widest">Season</Label>
@@ -463,19 +510,49 @@ export default function Expenses() {
             </Select>
           </div>
           <div>
+            <Label className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Line</Label>
+            <Select value={f.line} onValueChange={(v) => applyF({ line: v })}>
+              <SelectTrigger data-testid="expense-filter-line" className="mt-1 h-9 rounded-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Lines</SelectItem>
+                {lineChoices.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>{l.name}{l.who ? ` · ${l.who}` : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <Label className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Show</Label>
             <Select value={view} onValueChange={setView}>
               <SelectTrigger data-testid="expense-view" className="mt-1 h-9 rounded-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Exhibitions & Salesmen</SelectItem>
+                <SelectItem value="all">Exhibitions &amp; Salesmen</SelectItem>
                 <SelectItem value="exhibition">Exhibitions only</SelectItem>
                 <SelectItem value="salesman">Salesmen only</SelectItem>
+                {f.group === "line" && <SelectItem value="line">Lines only</SelectItem>}
               </SelectContent>
             </Select>
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-border pt-3">
+          <div>
+            <Label className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Door-to-door rows</Label>
+            <Select
+              value={f.group}
+              onValueChange={(v) => {
+                // "Lines only" makes no sense once rows are back to salesmen.
+                if (v !== "line" && view === "line") setView("all");
+                applyF({ group: v });
+              }}
+            >
+              <SelectTrigger data-testid="expense-group" className="mt-1 h-9 w-64 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="target">One row per salesman</SelectItem>
+                <SelectItem value="line">Split by line — one row per trip</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Compare cost against</Label>
             <Select value={f.basis} onValueChange={(v) => applyF({ basis: v })}>
@@ -619,9 +696,12 @@ export default function Expenses() {
                 <TableRow key={e.id} className="align-top hover:bg-secondary/40" data-testid={`expense-entry-${e.id}`}>
                   <TableCell className="text-muted-foreground">{fmtDate(e.expense_date)}</TableCell>
                   <TableCell>
-                    <div className="font-medium">{e.exhibition || e.salesman || "—"}</div>
+                    <div className="font-medium">
+                      {e.exhibition || e.salesman || "—"}
+                      {e.line ? <span className="ml-1 font-normal text-muted-foreground">· {e.line}</span> : null}
+                    </div>
                     <div className="text-xs text-muted-foreground">
-                      {e.event_type === "door_to_door" ? "Salesman" : "Exhibition"}
+                      {e.event_type === "door_to_door" ? (e.line ? "Line" : "Salesman") : "Exhibition"}
                       {e.season ? ` · ${e.season}` : ""}
                     </div>
                     {e.note && <div className="mt-0.5 text-xs italic text-muted-foreground">{e.note}</div>}

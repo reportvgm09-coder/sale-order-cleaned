@@ -112,6 +112,37 @@ Every filter (dates, season, exhibition, salesman) goes through one shared
 filtered differently, a row would compare one season's costs against every
 season's revenue and read as far more profitable than it was.
 
+### A line is one door-to-door trip
+
+Gopal spends twelve days working Amravati, comes home, then goes out to Katni.
+Those are two **lines**. Hanging everything off the salesman put both trips'
+orders and both trips' costs in one bucket, so neither could be judged on its
+own.
+
+A line is an ordinary master (`lines` in `MASTER_TYPES`) with one addition: it
+**belongs to a salesman**, and the server refuses to create one without a valid
+`salesman_id`. That ownership is why two things behave differently here:
+
+- Near-duplicate detection is scoped to the owner. Two salesmen may each work an
+  "Amravati", and warning about the other man's is noise - so `find_similar()`
+  takes a `within` filter. A salesman's *own* second Amravati is still warned.
+- Bulk import matches the Salesman column by name and **skips** rows that match
+  nobody, rather than creating an ownerless line that could never be tracked.
+
+Orders and expense vouchers both carry `line_id`, nulled whenever the event type
+is not door-to-door - the same rule `expense_doc()` already applied to
+exhibition and salesman.
+
+`/expenses/summary` takes `group=target|line`. `target` is the old behaviour, one
+row per exhibition and per salesman; `line` splits door-to-door into one row per
+trip and leaves exhibitions alone. Work before lines existed collects under
+"No line set" rather than disappearing.
+
+The refactor that made this safe: `doc_context()` says where a voucher or order
+*belongs*, and `bucket_for()` says which row it *lands in*. Keeping them apart is
+what lets the rows be split by line while a filter still narrows by salesman -
+one gate, both sides, as the expenses rule below requires.
+
 ### Expense heads are an ordinary master type
 
 `expense_heads` is in `MASTER_TYPES`, so it gets CRUD, bulk import and

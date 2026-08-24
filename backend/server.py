@@ -93,7 +93,14 @@ MASTER_TYPES = {
     "salesmen": "salesmen",
     "seasons": "seasons",
     "expense_heads": "expense_heads",
+    "lines": "lines",
 }
+
+# A "line" is one door-to-door trip: a salesman, an area, and the days he was
+# there. Gopal's twelve days in Amravati and his following week in Katni are two
+# lines, so their orders and their costs can be told apart - which they cannot be
+# when everything hangs off the salesman alone.
+LINE_OWNER = "salesman_id"
 
 # Created on first run so the Expenses page isn't empty on day one.
 # They are an ordinary master list - rename, delete or add to them freely.
@@ -135,6 +142,7 @@ INDEXES = [
     ("expenses", "salesman_id", False),
     ("expenses", "expense_date", False),
     ("expenses", "created_at", False),
+    ("lines", LINE_OWNER, False),
 ] + [(coll, field, field == "id") for coll in MASTER_TYPES.values() for field in ("id", "name")]
 
 
@@ -198,11 +206,13 @@ def looks_like_same(a, b):
     return False
 
 
-async def find_similar(mtype, name, exclude_id=None):
+async def find_similar(mtype, name, exclude_id=None, within=None):
+    """`within` narrows what counts as a duplicate. Two salesmen may each work an
+    Amravati line, and warning about the other man's is just noise."""
     target = norm_name(name)
     if not target:
         return []
-    docs = await fetch_all(db[MASTER_TYPES[mtype]].find({}, {"_id": 0}), mtype)
+    docs = await fetch_all(db[MASTER_TYPES[mtype]].find(within or {}, {"_id": 0}), mtype)
     hits = [
         {"id": d["id"], "name": d["name"], "city": d.get("city")}
         for d in docs
@@ -216,6 +226,10 @@ class MasterCreate(BaseModel):
     name: str
     city: Optional[str] = None
     rate: Optional[float] = None
+    # lines only - which salesman works it, and when he was there
+    salesman_id: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     force: bool = False  # set once the user has seen the near-duplicate warning and wants it anyway
 
 
@@ -223,6 +237,9 @@ class MasterBulkRow(BaseModel):
     name: str
     city: Optional[str] = None
     rate: Optional[float] = None
+    salesman: Optional[str] = None  # by name - a spreadsheet has no ids in it
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class MasterBulk(BaseModel):
@@ -234,6 +251,9 @@ class MasterUpdate(BaseModel):
     name: str
     city: Optional[str] = None
     rate: Optional[float] = None
+    salesman_id: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class BulkIds(BaseModel):
@@ -268,6 +288,7 @@ class SaleOrderIn(BaseModel):
     event_type: Literal["exhibition", "door_to_door"] = "exhibition"
     exhibition_id: Optional[str] = None
     salesman_id: Optional[str] = None
+    line_id: Optional[str] = None  # which door-to-door trip it was taken on
     season_id: Optional[str] = None
     items: List[LineItem] = []
 
@@ -304,6 +325,7 @@ class ExpenseIn(BaseModel):
     event_type: Literal["exhibition", "door_to_door"] = "exhibition"
     exhibition_id: Optional[str] = None
     salesman_id: Optional[str] = None
+    line_id: Optional[str] = None
     season_id: Optional[str] = None
     note: Optional[str] = None
     items: List[ExpenseItem] = []
@@ -491,8 +513,15 @@ async def create_master(mtype: str, body: MasterCreate):
     city = (body.city or "").strip()
     if mtype == "customers" and not city:
         raise HTTPException(400, "City is required for customers")
+    owner = (body.salesman_id or "").strip()
+    if mtype == "lines":
+        if not owner:
+            raise HTTPException(400, "Choose which salesman works this line")
+        if not await db.salesmen.find_one({"id": owner}):
+            raise HTTPException(400, "That salesman no longer exists - pick another")
     if not body.force:
-        similar = await find_similar(mtype, name)
+        # Only the same salesman's own lines can be duplicates of each other.
+        similar = await find_similar(mtype, name, within={LINE_OWNER: owner} if mtype == "lines" else None)
         if similar:
             # 409 rather than 400 so the UI can tell "needs confirming" apart from
             # "invalid", and offer to use the existing record instead.
@@ -505,6 +534,10 @@ async def create_master(mtype: str, body: MasterCreate):
         doc["city"] = city
     if mtype == "brands":
         doc["rate"] = float(body.rate) if body.rate is not None else 0
+    if mtype == "lines":
+        doc[LINE_OWNER] = owner
+        doc["start_date"] = body.start_date or None
+        doc["end_date"] = body.end_date or None
     await db[MASTER_TYPES[mtype]].insert_one(dict(doc))
     return {k: v for k, v in doc.items() if k != "created_at"}
 
@@ -513,22 +546,42 @@ async def create_master(mtype: str, body: MasterCreate):
 async def bulk_master(mtype: str, body: MasterBulk):
     if mtype not in MASTER_TYPES:
         raise HTTPException(404, "Unknown master type")
-    existing = {d["name"].lower() for d in await fetch_all(db[MASTER_TYPES[mtype]].find({}, {"_id": 0}), mtype)}
+    docs = await fetch_all(db[MASTER_TYPES[mtype]].find({}, {"_id": 0}), mtype)
+    # A line's name is only taken within its own salesman - two men can both
+    # work Amravati - so what counts as "already there" depends on the type.
+    existing = {(d.get(LINE_OWNER, ""), d["name"].lower()) if mtype == "lines" else ("", d["name"].lower()) for d in docs}
+    by_salesman = {}
+    if mtype == "lines":
+        by_salesman = {norm_name(s["name"]): s["id"] for s in await fetch_all(db.salesmen.find({}, {"_id": 0}), "salesmen")}
     incoming = body.rows if body.rows else [MasterBulkRow(name=n) for n in (body.names or [])]
-    added = 0
+    added, skipped = 0, 0
     for row in incoming:
         name = (row.name or "").strip()
-        if not name or name.lower() in existing:
+        if not name:
             continue
-        existing.add(name.lower())
+        owner = ""
+        if mtype == "lines":
+            owner = by_salesman.get(norm_name(row.salesman or ""), "")
+            if not owner:
+                # No salesman, no line - it would be untrackable, which is the
+                # whole reason lines exist.
+                skipped += 1
+                continue
+        if (owner, name.lower()) in existing:
+            continue
+        existing.add((owner, name.lower()))
         doc = {"id": gen_id(mtype[:4].upper()), "name": name, "created_at": now_iso()}
         if mtype == "customers":
             doc["city"] = (row.city or "").strip()
         if mtype == "brands":
             doc["rate"] = float(row.rate) if row.rate is not None else 0
+        if mtype == "lines":
+            doc[LINE_OWNER] = owner
+            doc["start_date"] = row.start_date or None
+            doc["end_date"] = row.end_date or None
         await db[MASTER_TYPES[mtype]].insert_one(doc)
         added += 1
-    return {"added": added}
+    return {"added": added, "skipped": skipped} if skipped else {"added": added}
 
 
 @api_router.put("/masters/{mtype}/{mid}")
@@ -546,6 +599,15 @@ async def update_master(mtype: str, mid: str, body: MasterUpdate):
         update["city"] = city
     if mtype == "brands":
         update["rate"] = float(body.rate) if body.rate is not None else 0
+    if mtype == "lines":
+        owner = (body.salesman_id or "").strip()
+        if not owner:
+            raise HTTPException(400, "Choose which salesman works this line")
+        if not await db.salesmen.find_one({"id": owner}):
+            raise HTTPException(400, "That salesman no longer exists - pick another")
+        update[LINE_OWNER] = owner
+        update["start_date"] = body.start_date or None
+        update["end_date"] = body.end_date or None
     res = await db[MASTER_TYPES[mtype]].update_one({"id": mid}, {"$set": update})
     if res.matched_count == 0:
         raise HTTPException(404, "Not found")
@@ -618,6 +680,7 @@ async def get_sale_order(order_id: str):
     exhibitions = await get_name_map("exhibitions")
     salesmen = await get_name_map("salesmen")
     seasons = await get_name_map("seasons")
+    lines = await get_name_map("lines")
     detail = (await dispatched_detail_bulk([order_id])).get(order_id, {})
     dispatched = {bid: d["qty"] for bid, d in detail.items()}
     t = compute_order_totals(o, dispatched)
@@ -629,6 +692,7 @@ async def get_sale_order(order_id: str):
             "state": o.get("state") or "open",
             "exhibition": exhibitions.get(o.get("exhibition_id")),
             "salesman": salesmen.get(o.get("salesman_id")),
+            "line": lines.get(o.get("line_id")),
             "season": seasons.get(o.get("season_id")),
             "items": build_items(o, brands),
             "brand_rows": build_brand_rows(o, dispatched, brands, detail),
@@ -740,12 +804,27 @@ def expense_total(exp):
     return sum((it.get("amount") or 0) for it in exp.get("items", []))
 
 
+def doc_context(doc):
+    """Where a voucher or an order belongs: an exhibition, or a salesman and the
+    particular line he was working at the time.
+
+    Kept separate from the row it ends up in, because the two are not the same
+    question - the rows can be split by line while a filter still narrows by the
+    salesman who worked them."""
+    d2d = (doc.get("event_type") or "exhibition") == "door_to_door"
+    return {
+        "door_to_door": d2d,
+        "exhibition_id": None if d2d else doc.get("exhibition_id"),
+        "salesman_id": doc.get("salesman_id") if d2d else None,
+        "line_id": doc.get("line_id") if d2d else None,
+    }
+
+
 def expense_target(exp):
     """Which exhibition or salesman this voucher is charged to.
     Returns (kind, id) - id is None when it wasn't assigned to one."""
-    if (exp.get("event_type") or "exhibition") == "door_to_door":
-        return "salesman", exp.get("salesman_id")
-    return "exhibition", exp.get("exhibition_id")
+    ctx = doc_context(exp)
+    return ("salesman", ctx["salesman_id"]) if ctx["door_to_door"] else ("exhibition", ctx["exhibition_id"])
 
 
 def order_gross_value(order):
@@ -777,12 +856,14 @@ async def list_expenses():
     exhibitions = await get_name_map("exhibitions")
     salesmen = await get_name_map("salesmen")
     seasons = await get_name_map("seasons")
+    lines = await get_name_map("lines")
     docs = await fetch_all(db.expenses.find({}, {"_id": 0}).sort("expense_date", -1), "expenses")
     return [
         {
             **e,
             "exhibition": exhibitions.get(e.get("exhibition_id")),
             "salesman": salesmen.get(e.get("salesman_id")),
+            "line": lines.get(e.get("line_id")),
             "season": seasons.get(e.get("season_id")),
             "items": build_expense_items(e, heads),
             "total": expense_total(e),
@@ -800,6 +881,7 @@ def expense_doc(body: "ExpenseIn"):
         "event_type": body.event_type,
         "exhibition_id": body.exhibition_id if body.event_type == "exhibition" else None,
         "salesman_id": body.salesman_id if body.event_type == "door_to_door" else None,
+        "line_id": body.line_id if body.event_type == "door_to_door" else None,
         "season_id": body.season_id,
         "note": (body.note or "").strip() or None,
         "items": items,
@@ -848,6 +930,8 @@ async def expenses_summary(
     season: Optional[str] = None,
     exhibition: Optional[str] = None,
     salesman: Optional[str] = None,
+    line: Optional[str] = None,
+    group: Literal["target", "line"] = "target",
 ):
     """Spend per exhibition and per salesman, broken down by head, next to what
     each one brought in.
@@ -860,40 +944,70 @@ async def expenses_summary(
     start/end filter on expense_date and order_date - an order is credited to the
     event where it was taken, no matter when the goods later left the building.
 
-    season / exhibition / salesman narrow both sides the same way, so the spend
-    and the sales on any row always describe the same slice of the business.
+    season / exhibition / salesman / line narrow both sides the same way, so the
+    spend and the sales on any row always describe the same slice of the business.
+
+    group picks what a row is:
+      target - one row per exhibition and per salesman (how it has always read)
+      line   - door-to-door splits into one row per trip, so twelve days in
+               Amravati and the following week in Katni can be told apart.
+               Exhibitions are unaffected; they have no lines.
     """
     heads = await get_name_map("expense_heads")
     exhibitions = await get_name_map("exhibitions")
     salesmen = await get_name_map("salesmen")
+    line_map = {ln["id"]: ln for ln in await fetch_all(db.lines.find({}, {"_id": 0}), "lines")}
     expenses = await fetch_all(db.expenses.find({}, {"_id": 0}), "expenses")
     orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
     dispatched_map = await dispatched_detail_bulk([o["id"] for o in orders])
 
-    def keep(kind, ref, season_id, date_str):
+    def keep(ctx, season_id, date_str):
         """One gate for expenses and orders alike - if the two sides were filtered
         differently, a row's cost and its sales would describe different things."""
         if not in_range(date_str, start, end):
             return False
         if season and season_id != season:
             return False
-        if exhibition and not (kind == "exhibition" and ref == exhibition):
+        if exhibition and ctx["exhibition_id"] != exhibition:
             return False
-        if salesman and not (kind == "salesman" and ref == salesman):
+        if salesman and ctx["salesman_id"] != salesman:
+            return False
+        if line and ctx["line_id"] != line:
             return False
         return True
+
+    def bucket_for(ctx):
+        """Which row this belongs in - a different question from `keep`."""
+        if not ctx["door_to_door"]:
+            return "exhibition", ctx["exhibition_id"]
+        if group == "line":
+            return "line", ctx["line_id"]
+        return "salesman", ctx["salesman_id"]
 
     rows = {}
 
     def bucket(kind, ref_id):
         key = f"{kind}:{ref_id or 'unassigned'}"
         if key not in rows:
-            names = exhibitions if kind == "exhibition" else salesmen
+            owner = None
+            if kind == "line":
+                ln = line_map.get(ref_id)
+                owner = salesmen.get(ln.get(LINE_OWNER)) if ln else None
+                # Whose trip it was rides along with the name. "Amravati" alone
+                # says nothing when two salesmen both work it.
+                name = f"{ln['name']} · {owner or 'Unknown'}" if ln else (
+                    "No line set" if not ref_id else "Deleted record"
+                )
+            else:
+                names = exhibitions if kind == "exhibition" else salesmen
+                owner = salesmen.get(ref_id) if kind == "salesman" else None
+                name = names.get(ref_id) or ("Not assigned" if not ref_id else "Deleted record")
             rows[key] = {
                 "key": key,
                 "type": kind,
                 "id": ref_id,
-                "name": names.get(ref_id) or ("Not assigned" if not ref_id else "Deleted record"),
+                "name": name,
+                "salesman": owner,
                 "expense": 0.0,
                 "by_head": {},
                 "order_value": 0.0,
@@ -904,10 +1018,10 @@ async def expenses_summary(
         return rows[key]
 
     for e in expenses:
-        kind, ref = expense_target(e)
-        if not keep(kind, ref, e.get("season_id"), e.get("expense_date")):
+        ctx = doc_context(e)
+        if not keep(ctx, e.get("season_id"), e.get("expense_date")):
             continue
-        r = bucket(kind, ref)
+        r = bucket(*bucket_for(ctx))
         r["voucher_count"] += 1
         for it in e.get("items", []):
             amt = it.get("amount") or 0
@@ -916,11 +1030,10 @@ async def expenses_summary(
             r["by_head"][name] = r["by_head"].get(name, 0) + amt
 
     for o in orders:
-        kind = "salesman" if (o.get("event_type") or "exhibition") == "door_to_door" else "exhibition"
-        ref = o.get("salesman_id") if kind == "salesman" else o.get("exhibition_id")
-        if not keep(kind, ref, o.get("season_id"), o.get("order_date")):
+        ctx = doc_context(o)
+        if not keep(ctx, o.get("season_id"), o.get("order_date")):
             continue
-        r = bucket(kind, ref)
+        r = bucket(*bucket_for(ctx))
         disp = order_dispatched_value(o, dispatched_map.get(o["id"], {}))
         # Nothing more is coming from a cancelled order, so only what actually
         # shipped counts as ordered. Counting the whole order would leave the
@@ -963,6 +1076,7 @@ async def expenses_summary(
 
     return {
         "basis": basis,
+        "group": group,
         "rows": out,
         "totals": totals,
         "by_head": [{"name": k, "amount": v} for k, v in sorted(by_head_all.items(), key=lambda x: -x[1])],
@@ -973,7 +1087,8 @@ async def expenses_summary(
 @api_router.get("/dashboard")
 async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] = None,
                     season_id: Optional[str] = None, event_type: Optional[str] = None,
-                    city: Optional[str] = None, overdue_only: bool = False):
+                    city: Optional[str] = None, line_id: Optional[str] = None,
+                    overdue_only: bool = False):
     all_orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
     customers = await get_name_map("customers")
     brands = await get_name_map("brands")
@@ -991,6 +1106,8 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
         if brand_id and not any(it.get("brand_id") == brand_id for it in o.get("items", [])):
             return False
         if city and city_map.get(o.get("customer_id"), "") != city:
+            return False
+        if line_id and o.get("line_id") != line_id:
             return False
         # A cancelled order is not work waiting to be done, so it is not on a
         # dashboard about what is still owed - not even in the order count.
@@ -1067,6 +1184,7 @@ async def reports():
     exhibitions = await get_name_map("exhibitions")
     salesmen = await get_name_map("salesmen")
     seasons = await get_name_map("seasons")
+    lines = await get_name_map("lines")
     city_map = {c["id"]: c.get("city", "") for c in await fetch_all(db.customers.find({}, {"_id": 0}), "customers")}
     detail_map = await dispatched_detail_bulk([o["id"] for o in orders])
     rows = []
@@ -1097,6 +1215,7 @@ async def reports():
                 "event_type": o.get("event_type") or "exhibition",
                 "exhibition": exhibitions.get(o.get("exhibition_id")) if o.get("event_type") == "exhibition" else None,
                 "salesman": salesmen.get(o.get("salesman_id")) if o.get("event_type") == "door_to_door" else None,
+                "line": lines.get(o.get("line_id")) if o.get("event_type") == "door_to_door" else None,
                 "season": seasons.get(o.get("season_id")),
                 "brand": brands.get(bid, "Unknown"),
                 "ordered_qty": a["qty"],
@@ -1137,6 +1256,7 @@ async def customer_history(customer_id: str):
     seasons = await get_name_map("seasons")
     exhibitions = await get_name_map("exhibitions")
     salesmen = await get_name_map("salesmen")
+    lines = await get_name_map("lines")
     raw_orders = await fetch_all(db.sale_orders.find({"customer_id": customer_id}, {"_id": 0}).sort("order_date", -1), "sale_orders")
     detail_map = await dispatched_detail_bulk([o["id"] for o in raw_orders])
     orders = []
@@ -1166,11 +1286,13 @@ async def customer_history(customer_id: str):
             # Display names (used by the table and the Excel statement export)
             "exhibition": exhibitions.get(o.get("exhibition_id")),
             "salesman": salesmen.get(o.get("salesman_id")),
+            "line": lines.get(o.get("line_id")),
             "season": seasons.get(o.get("season_id")),
             # Raw IDs, so the ledger's Edit dialog can pre-fill the form
             "customer_id": o.get("customer_id"),
             "exhibition_id": o.get("exhibition_id"),
             "salesman_id": o.get("salesman_id"),
+            "line_id": o.get("line_id"),
             "season_id": o.get("season_id"),
             "items": items,
             "brand_rows": brand_rows,
@@ -1199,7 +1321,7 @@ async def customer_history(customer_id: str):
 
 # ---------- Backup ----------
 BACKUP_COLLECTIONS = [
-    "customers", "brands", "exhibitions", "salesmen", "seasons", "expense_heads",
+    "customers", "brands", "exhibitions", "salesmen", "seasons", "expense_heads", "lines",
     "sale_orders", "dispatch_orders", "expenses",
 ]
 

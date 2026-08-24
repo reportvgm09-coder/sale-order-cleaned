@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { addMasterConfirmed } from "@/lib/masters";
-import { readWorkbookRows, downloadSheet } from "@/lib/excel";
-import { inr, today } from "@/lib/format";
+import { readWorkbookRows, downloadSheet, sheetDate } from "@/lib/excel";
+import { inr, today, fmtDate } from "@/lib/format";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, X, Upload, Download, Users, Tag, Store, UserCog, CalendarRange, Pencil, Check, DatabaseBackup, ShieldAlert, Wallet } from "lucide-react";
+import { Plus, X, Upload, Download, Users, Tag, Store, UserCog, CalendarRange, Pencil, Check, DatabaseBackup, ShieldAlert, Wallet, Route } from "lucide-react";
 
 const LISTS = [
   { type: "customers", label: "Customers", icon: Users, hasCity: true },
@@ -231,6 +232,275 @@ function MasterPanel({ type, label, icon: Icon, hasCity, hasRate }) {
   );
 }
 
+/**
+ * Lines - one door-to-door trip each.
+ *
+ * A line belongs to a salesman, so the same area worked by two men is two
+ * separate lines and their money never mixes. Listed under the salesman who
+ * works it, because "whose line is this" is the first thing you need to know.
+ */
+function LinesPanel() {
+  const [items, setItems] = useState([]);
+  const [salesmen, setSalesmen] = useState([]);
+  const [draft, setDraft] = useState({ name: "", salesman_id: "", start_date: "", end_date: "" });
+  const [editId, setEditId] = useState(null);
+  const [edit, setEdit] = useState({ name: "", salesman_id: "", start_date: "", end_date: "" });
+  const [selected, setSelected] = useState([]);
+
+  const toggleSel = (id) => setSelected((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  const load = async () => {
+    try {
+      const [ls, sm] = await Promise.all([api.listMasters("lines"), api.listMasters("salesmen")]);
+      setItems(ls);
+      setSalesmen(sm);
+    } catch (e) {
+      toast.error(apiErr(e));
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []); // eslint-disable-line
+
+  const add = async () => {
+    const name = draft.name.trim();
+    if (!name) return toast.error("Give the line a name - the area is the usual one, e.g. Amravati");
+    if (!draft.salesman_id) return toast.error("Choose which salesman works this line");
+    try {
+      const created = await addMasterConfirmed("lines", { ...draft, name });
+      if (!created) return; // the user looked at the near-duplicates and backed out
+      // Keep the salesman selected - trips are nearly always entered in runs.
+      setDraft({ name: "", salesman_id: draft.salesman_id, start_date: "", end_date: "" });
+      toast.success("Line added");
+      load();
+    } catch (e) {
+      toast.error(apiErr(e));
+    }
+  };
+
+  const startEdit = (it) => {
+    setEditId(it.id);
+    setEdit({
+      name: it.name,
+      salesman_id: it.salesman_id || "",
+      start_date: it.start_date || "",
+      end_date: it.end_date || "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!edit.name.trim()) return toast.error("Name is required");
+    if (!edit.salesman_id) return toast.error("Choose which salesman works this line");
+    try {
+      await api.updateMaster("lines", editId, { ...edit, name: edit.name.trim() });
+      setEditId(null);
+      toast.success("Saved");
+      load();
+    } catch (e) {
+      toast.error(apiErr(e));
+    }
+  };
+
+  const remove = async (id) => {
+    try {
+      await api.deleteMaster("lines", id);
+      load();
+    } catch (e) {
+      toast.error(apiErr(e));
+    }
+  };
+
+  const bulkDelete = async () => {
+    if (!window.confirm(`Delete ${selected.length} selected line(s)?`)) return;
+    try {
+      await api.bulkDeleteMasters("lines", selected);
+      toast.success(`Deleted ${selected.length}`);
+      setSelected([]);
+      load();
+    } catch (e) {
+      toast.error(apiErr(e));
+    }
+  };
+
+  const importList = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const rows = await readWorkbookRows(file);
+      const parsed = rows
+        .map((r) => ({
+          name: String(r["Name"] ?? "").trim(),
+          salesman: String(r["Salesman"] ?? "").trim(),
+          start_date: sheetDate(r["Start Date"]) || null,
+          end_date: sheetDate(r["End Date"]) || null,
+        }))
+        .filter((r) => r.name);
+      if (parsed.length === 0) return toast.error("Need a 'Name' column, and a 'Salesman' column matching your salesmen");
+      const res = await api.bulkMaster("lines", { rows: parsed });
+      toast.success(`Added ${res.added} line${res.added === 1 ? "" : "s"}`);
+      // A line with nobody to own it could never be tracked, so it is not created.
+      if (res.skipped) toast.warning(`${res.skipped} skipped - the Salesman column did not match anyone`);
+      load();
+    } catch (err) {
+      toast.error(apiErr(err));
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const template = () =>
+    downloadSheet(
+      [{ Name: "Amravati", Salesman: salesmen[0]?.name || "Gopal", "Start Date": today(), "End Date": today() }],
+      "Lines",
+      "lines-template.xlsx"
+    );
+
+  const grouped = salesmen
+    .map((s) => ({
+      salesman: s,
+      lines: items
+        .filter((l) => l.salesman_id === s.id)
+        .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || "") || a.name.localeCompare(b.name)),
+    }))
+    .filter((g) => g.lines.length > 0);
+  const orphans = items.filter((l) => !salesmen.some((s) => s.id === l.salesman_id));
+
+  const dateSpan = (it) => {
+    if (!it.start_date && !it.end_date) return null;
+    if (it.start_date && it.end_date) return `${fmtDate(it.start_date)} - ${fmtDate(it.end_date)}`;
+    return fmtDate(it.start_date || it.end_date);
+  };
+
+  const row = (it) =>
+    editId === it.id ? (
+      <div key={it.id} className="grid gap-2 rounded-sm border border-primary/40 bg-accent/40 p-2 md:grid-cols-[1.2fr_1fr_130px_130px_auto_auto]" data-testid={`line-edit-${it.id}`}>
+        <Input data-testid={`line-edit-name-${it.id}`} value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} onKeyDown={(e) => e.key === "Enter" && saveEdit()} className="h-8 rounded-sm border-2" />
+        <Select value={edit.salesman_id} onValueChange={(v) => setEdit({ ...edit, salesman_id: v })}>
+          <SelectTrigger data-testid={`line-edit-salesman-${it.id}`} className="h-8 rounded-sm border-2"><SelectValue placeholder="Salesman" /></SelectTrigger>
+          <SelectContent>
+            {salesmen.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Input type="date" value={edit.start_date} onChange={(e) => setEdit({ ...edit, start_date: e.target.value })} className="h-8 rounded-sm border-2" />
+        <Input type="date" value={edit.end_date} onChange={(e) => setEdit({ ...edit, end_date: e.target.value })} className="h-8 rounded-sm border-2" />
+        <Button data-testid={`line-save-${it.id}`} size="icon" onClick={saveEdit} className="h-8 w-8 rounded-sm"><Check className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => setEditId(null)} className="h-8 w-8"><X className="h-4 w-4" /></Button>
+      </div>
+    ) : (
+      <div key={it.id} className="flex items-center justify-between rounded-sm border border-border px-3 py-1.5 text-sm" data-testid={`line-item-${it.id}`}>
+        <span className="flex min-w-0 items-center gap-2">
+          <Checkbox data-testid={`line-select-${it.id}`} checked={selected.includes(it.id)} onCheckedChange={() => toggleSel(it.id)} />
+          <span className="min-w-0 truncate">
+            <span className="font-medium">{it.name}</span>
+            {dateSpan(it) ? <span className="ml-2 text-xs text-muted-foreground">· {dateSpan(it)}</span> : null}
+            <span className="ml-2 font-mono text-[10px] text-muted-foreground">{it.id}</span>
+          </span>
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <button data-testid={`line-edit-btn-${it.id}`} onClick={() => startEdit(it)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3.5 w-3.5" /></button>
+          <button data-testid={`line-remove-${it.id}`} onClick={() => remove(it.id)} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+        </div>
+      </div>
+    );
+
+  return (
+    <Card className="rounded-sm border-2 border-border shadow-none md:col-span-2" data-testid="master-lines">
+      <div className="flex items-center gap-2 border-b border-border p-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-border bg-accent text-primary">
+          <Route className="h-4 w-4" />
+        </div>
+        <div>
+          <h3 className="font-display text-base font-bold tracking-tight">Lines</h3>
+          <p className="text-xs text-muted-foreground">
+            One door-to-door trip each. Twelve days in Amravati and the next week in Katni are two lines, so their orders and their costs stay apart.
+          </p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            <Checkbox data-testid="line-select-all" checked={items.length > 0 && selected.length === items.length} onCheckedChange={(v) => setSelected(v ? items.map((i) => i.id) : [])} /> All
+          </label>
+          <span className="rounded-sm border border-border px-2 py-0.5 text-xs text-muted-foreground">{items.length}</span>
+        </div>
+      </div>
+
+      {selected.length > 0 && (
+        <div className="flex items-center justify-between border-b border-border bg-accent/40 px-4 py-2" data-testid="line-bulk-bar">
+          <span className="text-xs font-medium">{selected.length} selected</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelected([])} className="h-7 rounded-sm text-xs">Clear</Button>
+            <Button data-testid="line-bulk-delete" variant="destructive" size="sm" onClick={bulkDelete} className="h-7 gap-1 rounded-sm text-xs">
+              <X className="h-3.5 w-3.5" /> Delete
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="p-4">
+        {salesmen.length === 0 ? (
+          <div className="rounded-sm border-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Add a salesman first - every line belongs to one.
+          </div>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-[1.2fr_1fr_130px_130px_auto]">
+            <Input data-testid="line-input-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Area, e.g. Amravati" className="rounded-sm border-2" />
+            <Select value={draft.salesman_id} onValueChange={(v) => setDraft({ ...draft, salesman_id: v })}>
+              <SelectTrigger data-testid="line-input-salesman" className="rounded-sm border-2"><SelectValue placeholder="Salesman" /></SelectTrigger>
+              <SelectContent>
+                {salesmen.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input data-testid="line-input-start" type="date" title="First day of the trip (optional)" value={draft.start_date} onChange={(e) => setDraft({ ...draft, start_date: e.target.value })} className="rounded-sm border-2" />
+            <Input data-testid="line-input-end" type="date" title="Last day of the trip (optional)" value={draft.end_date} onChange={(e) => setDraft({ ...draft, end_date: e.target.value })} className="rounded-sm border-2" />
+            <Button data-testid="line-add" onClick={add} className="gap-1 rounded-sm">
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+          <label className="inline-flex cursor-pointer items-center gap-1 rounded-sm border border-border px-2 py-1 text-muted-foreground hover:text-foreground">
+            <Upload className="h-3.5 w-3.5" /> Import list
+            <input data-testid="line-import" type="file" accept=".xlsx,.xls,.csv" onChange={importList} className="hidden" />
+          </label>
+          <button onClick={template} className="inline-flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-muted-foreground hover:text-foreground">
+            <Download className="h-3.5 w-3.5" /> Template
+          </button>
+          <span className="text-muted-foreground">Dates are optional - they only record when the trip was.</span>
+        </div>
+
+        <div className="mt-3 max-h-80 space-y-3 overflow-auto">
+          {items.length === 0 ? (
+            <div className="rounded-sm border border-dashed border-border py-6 text-center text-sm text-muted-foreground">No lines yet.</div>
+          ) : (
+            <>
+              {grouped.map((g) => (
+                <div key={g.salesman.id} data-testid={`line-group-${g.salesman.id}`}>
+                  <div className="mb-1 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <UserCog className="h-3.5 w-3.5" /> {g.salesman.name}
+                    <span className="font-normal normal-case tracking-normal">
+                      {g.lines.length} line{g.lines.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="space-y-1">{g.lines.map(row)}</div>
+                </div>
+              ))}
+              {orphans.length > 0 && (
+                <div data-testid="line-group-orphans">
+                  <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-amber-600">
+                    Salesman deleted - edit each one to reassign it
+                  </div>
+                  <div className="space-y-1">{orphans.map(row)}</div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function BackupPanel() {
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState(null);
@@ -314,6 +584,7 @@ export default function Masters() {
         {LISTS.map((l) => (
           <MasterPanel key={l.type} {...l} />
         ))}
+        <LinesPanel />
       </div>
       <BackupPanel />
     </div>

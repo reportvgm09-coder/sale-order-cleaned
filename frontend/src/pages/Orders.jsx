@@ -64,6 +64,7 @@ const COLUMNS = [
   { key: "city", label: "City", filter: "list" },
   { key: "event", label: "Event", filter: "list" },
   { key: "source", label: "Exhibition / Salesman", filter: "list" },
+  { key: "line", label: "Line", filter: "list" },
   { key: "season", label: "Season", filter: "list" },
   {
     key: "brands",
@@ -292,13 +293,14 @@ export default function Orders() {
         // The order list carries ids, not names, so the master lists are needed
         // to make it readable. One round of requests, then everything below is
         // in-memory - this page never goes back to the server to filter.
-        const [orders, customers, brands, exhibitions, salesmen, seasons] = await Promise.all([
+        const [orders, customers, brands, exhibitions, salesmen, seasons, lineList] = await Promise.all([
           api.listSaleOrders(),
           api.listMasters("customers"),
           api.listMasters("brands"),
           api.listMasters("exhibitions"),
           api.listMasters("salesmen"),
           api.listMasters("seasons"),
+          api.listMasters("lines"),
         ]);
         const nameOf = (list) => Object.fromEntries(list.map((m) => [m.id, m.name]));
         const cust = Object.fromEntries(customers.map((c) => [c.id, c]));
@@ -306,6 +308,7 @@ export default function Orders() {
         const exhName = nameOf(exhibitions);
         const smName = nameOf(salesmen);
         const seasonName = nameOf(seasons);
+        const lineName = nameOf(lineList);
         const todayStr = today();
 
         setRows(
@@ -322,6 +325,7 @@ export default function Orders() {
               city: c?.city || "",
               event: EVENT_LABEL[o.event_type] || EVENT_LABEL.exhibition,
               source: (doorToDoor ? smName[o.salesman_id] : exhName[o.exhibition_id]) || "",
+              line: (doorToDoor ? lineName[o.line_id] : "") || "",
               season: seasonName[o.season_id] || "",
               brands: Array.from(new Set((o.items || []).map((it) => brandName[it.brand_id] || "Unknown"))).join(", "),
               ordered: t.ordered_qty || 0,
