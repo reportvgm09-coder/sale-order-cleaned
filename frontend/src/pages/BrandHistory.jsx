@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiErr } from "@/lib/api";
 import { useAuth } from "@/context/Auth";
-import { inr, num, fmtDate, xlDate, today } from "@/lib/format";
+import { inr, num, fmtDate, fmtWeek, fmtMonth, weekStart, xlDate, today } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,11 +12,16 @@ import { stateRowClass } from "@/lib/orderState";
 import { DispatchDialog, EditOrderDialog } from "@/components/OrderDialogs";
 import { ExportDialog } from "@/components/ExportDialog";
 import { toast } from "sonner";
-import { ArrowLeft, IndianRupee, Truck, Package, Printer, FileSpreadsheet, FilterX, Pencil } from "lucide-react";
+import { ArrowLeft, IndianRupee, Truck, Package, Printer, FileSpreadsheet, FilterX, Pencil, CalendarRange } from "lucide-react";
 import { Loader } from "@/components/Loader";
 
 const EVENT_LABEL = { exhibition: "Exhibition", door_to_door: "Door to Door" };
 const BLANK = { status: "all", season: "all", event: "all", customer: "all" };
+
+// How many periods the summary shows before you ask for the rest. A year of
+// months fits; a year of weeks does not, and an unbroken wall of them buries
+// the timeline underneath it.
+const PERIOD_PAGE = 12;
 
 const Stat = ({ label, value, testid }) => (
   <Card data-testid={testid} className="rounded-sm border-2 border-border p-4 shadow-none">
@@ -31,6 +36,8 @@ export default function BrandHistory() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(BLANK);
+  const [period, setPeriod] = useState("week");
+  const [allPeriods, setAllPeriods] = useState(false);
   const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState(null);
   const [masters, setMasters] = useState({ brands: [], exhibitions: [], salesmen: [], seasons: [] });
@@ -115,6 +122,33 @@ export default function BrandHistory() {
     [filtered]
   );
 
+  // Every dispatch of this brand rolled up by week or by month. Deliberately
+  // NOT narrowed by the order filters above: this answers "how much of this
+  // brand went out, and when", and a filter left on would quietly change what
+  // the figures mean while still reading as the brand's total.
+  const dispatchPeriods = useMemo(() => {
+    const map = new Map();
+    (data?.timeline || []).forEach((d) => {
+      const key =
+        (!d.dispatch_date ? null : period === "week" ? weekStart(d.dispatch_date) : d.dispatch_date.slice(0, 7)) || "";
+      const b = map.get(key) || { key, count: 0, qty: 0, amount: 0 };
+      b.count += 1;
+      b.qty += d.qty || 0;
+      // The valued figure, not what was typed - an unpriced dispatch is worth
+      // the order's rate, not nothing.
+      b.amount += d.dispatched_value || 0;
+      map.set(key, b);
+    });
+    // Newest first, with anything undated at the bottom rather than dropped -
+    // a dispatch with no date is worth seeing, not hiding.
+    return [...map.values()].sort((a, b) => (a.key && b.key ? (a.key < b.key ? 1 : -1) : a.key ? -1 : 1));
+  }, [data, period]);
+
+  const pTotals = useMemo(
+    () => dispatchPeriods.reduce((a, b) => ({ qty: a.qty + b.qty, amount: a.amount + b.amount }), { qty: 0, amount: 0 }),
+    [dispatchPeriods]
+  );
+
   const setF = (patch) => setFilters((p) => ({ ...p, ...patch }));
   const activeFilters = Object.values(filters).filter((v) => v !== "all").length;
 
@@ -122,6 +156,9 @@ export default function BrandHistory() {
   if (!data) return <div className="text-sm text-muted-foreground">Brand not found.</div>;
 
   const { brand, timeline, summary } = data;
+
+  const periodLabel = (key) => (key ? (period === "week" ? fmtWeek(key) : fmtMonth(key)) : "No date set");
+  const shownPeriods = allPeriods ? dispatchPeriods : dispatchPeriods.slice(0, PERIOD_PAGE);
 
   const exportSheets = [
     {
@@ -165,6 +202,17 @@ export default function BrandHistory() {
         { key: "Order Pcs (All Brands)", get: (o) => o.order_qty },
         { key: "Order Status", get: (o) => o.status },
         { key: "Order State", get: (o) => o.state },
+      ],
+    },
+    {
+      name: "Dispatch Summary",
+      data: dispatchPeriods,
+      columns: [
+        { key: period === "week" ? "Week" : "Month", get: (b) => periodLabel(b.key) },
+        { key: "Starting", get: (b) => (b.key ? xlDate(period === "week" ? b.key : `${b.key}-01`) : "") },
+        { key: "Dispatches", get: (b) => b.count },
+        { key: "Qty", get: (b) => b.qty },
+        { key: "Amount (INR)", get: (b) => b.amount },
       ],
     },
     {
@@ -363,6 +411,85 @@ export default function BrandHistory() {
               </TableBody>
             </Table>
           </div>
+        )}
+      </Card>
+
+      {/* Weekly / monthly dispatch rollup */}
+      <Card className="rounded-sm border-2 border-border shadow-none" data-testid="brand-dispatch-summary">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+          <div className="flex items-center gap-2">
+            <CalendarRange className="h-4 w-4 text-primary" />
+            <div>
+              <h2 className="font-display text-lg font-bold tracking-tight">Dispatch Summary</h2>
+              <p className="text-xs text-muted-foreground">
+                Every dispatch of this brand, {period === "week" ? "week by week" : "month by month"} — the order filters above do not narrow it
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 rounded-sm border-2 border-border p-0.5 no-print">
+            {[
+              ["week", "Weekly"],
+              ["month", "Monthly"],
+            ].map(([key, label]) => (
+              <Button
+                key={key}
+                data-testid={`brand-period-${key}`}
+                variant={period === key ? "default" : "ghost"}
+                size="sm"
+                onClick={() => {
+                  setPeriod(key);
+                  setAllPeriods(false);
+                }}
+                className="h-7 rounded-sm px-3 text-xs"
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        {dispatchPeriods.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground" data-testid="brand-dispatch-summary-empty">
+            Nothing dispatched yet.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-secondary/60">
+                <TableHead className="text-xs uppercase tracking-widest">{period === "week" ? "Week" : "Month"}</TableHead>
+                <TableHead className="text-right text-xs uppercase tracking-widest">Dispatches</TableHead>
+                <TableHead className="text-right text-xs uppercase tracking-widest">Qty</TableHead>
+                <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {shownPeriods.map((b) => (
+                <TableRow key={b.key || "no-date"} className="hover:bg-secondary/40" data-testid={`brand-period-row-${b.key || "no-date"}`}>
+                  <TableCell className="font-medium">{periodLabel(b.key)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{num(b.count)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{num(b.qty)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-emerald-700">{inr(b.amount)}</TableCell>
+                </TableRow>
+              ))}
+              {dispatchPeriods.length > PERIOD_PAGE && (
+                <TableRow data-testid="brand-period-more">
+                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                    <Button variant="ghost" size="sm" onClick={() => setAllPeriods((v) => !v)} className="h-7 rounded-sm text-xs">
+                      {allPeriods
+                        ? `Show only the latest ${PERIOD_PAGE}`
+                        : `Show all ${dispatchPeriods.length} ${period === "week" ? "weeks" : "months"}`}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {/* Always the whole history, however many rows are on screen -
+                  it has to match the Dispatched Value stat at the top. */}
+              <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="brand-period-total-row">
+                <TableCell colSpan={2}>Grand Total ({dispatchPeriods.length} {period === "week" ? "weeks" : "months"})</TableCell>
+                <TableCell className="text-right tabular-nums">{num(pTotals.qty)}</TableCell>
+                <TableCell className="text-right tabular-nums text-emerald-700">{inr(pTotals.amount)}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         )}
       </Card>
 

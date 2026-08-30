@@ -1386,6 +1386,7 @@ async def brand_history(brand_id: str):
     orders = []
     order_ids = []
     order_customer = {}
+    order_rate = {}
     agg = {"ordered": 0, "dispatched": 0, "pending": 0, "amount": 0, "dispatched_value": 0}
     for o in raw_orders:
         detail = detail_map.get(o["id"], {})
@@ -1395,6 +1396,7 @@ async def brand_history(brand_id: str):
             continue
         order_ids.append(o["id"])
         order_customer[o["id"]] = o.get("customer_id")
+        order_rate[o["id"]] = row["rate"]
         # Status is the whole order's, not this brand's: an order is what gets
         # dispatched, and calling a line "done" while the rest of its order is
         # still outstanding would read as a shipment that never happened.
@@ -1434,6 +1436,7 @@ async def brand_history(brand_id: str):
             if not mine:
                 continue
             priced = [it["amount"] for it in mine if it.get("amount") is not None]
+            rate = order_rate.get(d["sale_order_id"], 0)
             timeline.append({
                 "id": d["id"],
                 "sale_order_id": d["sale_order_id"],
@@ -1441,9 +1444,19 @@ async def brand_history(brand_id: str):
                 "dispatch_date": d.get("dispatch_date"),
                 "created_at": d.get("created_at"),
                 "qty": sum(it.get("qty") or 0 for it in mine),
-                # None, not 0: nothing priced means "value it at the order rate",
-                # and a zero would read as goods that went out free.
+                # What was actually typed against this dispatch. None, not 0:
+                # nothing priced means "value it at the order rate", and a zero
+                # would read as goods that went out free.
                 "value": sum(priced) if priced else None,
+                # What it is worth, on the one rule used everywhere - the amount
+                # entered where there is one, the order's rate where there is
+                # not. Summed over a brand these come back to exactly
+                # brand_dispatched_value, which is what keeps the week and month
+                # rollups from drifting from the totals printed above them.
+                "dispatched_value": sum(
+                    it["amount"] if it.get("amount") is not None else (it.get("qty") or 0) * rate
+                    for it in mine
+                ),
             })
     timeline.sort(key=lambda x: (x.get("dispatch_date") or x.get("created_at") or ""), reverse=True)
     return {

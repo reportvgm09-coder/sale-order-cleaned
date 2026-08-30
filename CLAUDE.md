@@ -171,6 +171,9 @@ keep that honest, all in `lib/format.js` and `lib/excel.js`:
   filed a day early, and at a month end in the wrong month entirely.
 - `fmtDate()` splits `YYYY-MM-DD` by hand rather than letting `new Date()`
   read it as UTC midnight, which prints as the day before west of UTC.
+- `weekStart()` walks back to Monday with `setDate()` on a local Date, for the
+  same reason. Going through UTC lands on the previous day west of it, which
+  files a Monday's dispatch under the week before.
 - `xlDate()` builds the Date for Excel at **UTC** midnight, because that is how
   ExcelJS converts one to a cell - a local midnight lands a day early. Exports
   carry real dates with a `dd-mmm-yyyy` format, not text, so Excel can sort,
@@ -218,6 +221,25 @@ times.
 
 `items.brand_id` is indexed, because the history looks orders up by the brands
 sitting on their lines.
+
+**The Dispatch Summary card** rolls every dispatch of the brand up by week or by
+month, qty and amount together. Three things about it are deliberate:
+
+- Its money column is what the goods are **worth**, not what was typed. Each
+  timeline entry carries `dispatched_value` alongside `value`: `value` is the
+  amount actually entered and stays blank when there was none, while
+  `dispatched_value` applies the usual fallback. Summed over a brand they come
+  back to `brand_dispatched_value` exactly, so the rollup total always equals
+  the Dispatched Value stat at the top of the page. Summing `value` instead
+  would have quietly valued every old dispatch at nothing.
+- It is **not** narrowed by the order filters. It answers "how much of this
+  brand went out, and when"; a filter left on would change what the figures mean
+  while still reading as the brand's total.
+- A dispatch with no date gets its own row at the bottom rather than being
+  dropped, and the grand total counts every period, not just the twelve on
+  screen.
+
+Weeks run **Monday to Sunday** via `weekStart()`.
 
 ### The Orders grid is driven by one column list
 

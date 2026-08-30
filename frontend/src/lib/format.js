@@ -35,6 +35,37 @@ export const fmtDate = (d) => {
 };
 
 /**
+ * The Monday of the week a stored date falls in, as "YYYY-MM-DD".
+ *
+ * Built from asDate and setDate for the same reason fmtDate splits by hand:
+ * anything that goes through UTC lands on the previous day west of it, which
+ * would file a Monday's dispatch under the week before. getDay() counts Sunday
+ * as 0, so it is shifted to make Monday the start of the week.
+ */
+export const weekStart = (d) => {
+  const dt = asDate(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+};
+
+/** "18 May – 24 May 2026" from that week's Monday. */
+export const fmtWeek = (monday) => {
+  const a = asDate(monday);
+  if (Number.isNaN(a.getTime())) return String(monday);
+  const b = new Date(a.getFullYear(), a.getMonth(), a.getDate() + 6);
+  const dm = (x) => x.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  return `${dm(a)} – ${dm(b)} ${b.getFullYear()}`;
+};
+
+/** "May 2026" from a "YYYY-MM" key. */
+export const fmtMonth = (key) => {
+  const [y, m] = String(key).split("-").map(Number);
+  if (!y || !m) return String(key);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+};
+
+/**
  * A stored date as a real Date for Excel, so the column arrives as dates rather
  * than text - sortable, filterable and groupable in a pivot. Built at midnight
  * UTC because that is how ExcelJS converts a Date to a cell; a local midnight
