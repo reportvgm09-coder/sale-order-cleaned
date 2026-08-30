@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/Auth";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, ScrollText, Truck, Database, BookMarked, BarChart3, Building2, GitCompareArrows, LogOut, UserRound, Wallet, Table } from "lucide-react";
+import { LayoutGrid, ScrollText, Truck, Database, BookMarked, BarChart3, Building2, GitCompareArrows, LogOut, UserRound, Wallet, Table, Tag } from "lucide-react";
 
 const tabs = [
   { to: "/", label: "Dashboard", icon: LayoutGrid, testid: "nav-dashboard", end: true },
@@ -9,6 +9,7 @@ const tabs = [
   { to: "/orders", label: "Orders", icon: Table, testid: "nav-orders" },
   { to: "/dispatch-orders", label: "Dispatch", icon: Truck, testid: "nav-dispatch-orders" },
   { to: "/customers", label: "Customers", icon: Building2, testid: "nav-customers" },
+  { to: "/brands", label: "Brands", icon: Tag, testid: "nav-brands" },
   { to: "/reports", label: "Reports", icon: BarChart3, testid: "nav-reports" },
   { to: "/expenses", label: "Expenses", icon: Wallet, testid: "nav-expenses" },
   { to: "/compare", label: "Compare", icon: GitCompareArrows, testid: "nav-compare" },

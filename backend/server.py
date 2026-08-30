@@ -132,6 +132,8 @@ async def fetch_all(cursor, what):
 INDEXES = [
     ("sale_orders", "id", True),
     ("sale_orders", "customer_id", False),
+    # the brand ledger looks orders up by the brands on their lines
+    ("sale_orders", "items.brand_id", False),
     ("sale_orders", "order_date", False),
     ("sale_orders", "created_at", False),
     ("dispatch_orders", "id", True),
@@ -1317,6 +1319,143 @@ async def customer_history(customer_id: str):
             })
     timeline.sort(key=lambda x: (x.get("dispatch_date") or x.get("created_at") or ""), reverse=True)
     return {"customer": customer, "orders": orders, "timeline": timeline, "summary": {**agg, "order_count": len(orders)}}
+
+
+# ---------- Brands overview & history ----------
+# The customer ledger read down the other axis. A customer's page answers "what
+# does this shop still have coming"; a brand's answers "how is this brand
+# moving, and who is holding it". Both are built from build_brand_rows, so
+# neither invents its own arithmetic - the dispatched-value rule in CLAUDE.md
+# only allows one implementation of that sum.
+def blank_brand_stats():
+    return {
+        "order_count": 0,
+        "customer_count": 0,
+        "ordered_qty": 0,
+        "dispatched_qty": 0,
+        "pending_qty": 0,
+        "amount": 0,
+        "dispatched_value": 0,
+    }
+
+
+@api_router.get("/brands")
+async def brands_overview():
+    brand_docs = await fetch_all(db.brands.find({}, {"_id": 0}).sort("name", 1), "brands")
+    names = {b["id"]: b["name"] for b in brand_docs}
+    orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
+    detail_map = await dispatched_detail_bulk([o["id"] for o in orders])
+    stats = {}
+    # Counted per brand, so the same order adds to every brand it carries - a
+    # brand's "orders" is how many orders it appears on, not the whole book.
+    buyers = {}
+    for o in orders:
+        detail = detail_map.get(o["id"], {})
+        dispatched = {bid: d["qty"] for bid, d in detail.items()}
+        for row in build_brand_rows(o, dispatched, names, detail):
+            s = stats.setdefault(row["brand_id"], blank_brand_stats())
+            s["order_count"] += 1
+            s["ordered_qty"] += row["ordered"]
+            s["dispatched_qty"] += row["dispatched"]
+            s["pending_qty"] += row["pending"]
+            s["amount"] += row["ordered_value"]
+            s["dispatched_value"] += row["dispatched_value"]
+            if o.get("customer_id"):
+                buyers.setdefault(row["brand_id"], set()).add(o["customer_id"])
+    for bid, s in stats.items():
+        s["customer_count"] = len(buyers.get(bid, ()))
+    return [{**b, **stats.get(b["id"], blank_brand_stats())} for b in brand_docs]
+
+
+@api_router.get("/brands/{brand_id}/history")
+async def brand_history(brand_id: str):
+    brand = await db.brands.find_one({"id": brand_id}, {"_id": 0})
+    if not brand:
+        raise HTTPException(404, "Brand not found")
+    names = await get_name_map("brands")
+    customers = await get_name_map("customers")
+    seasons = await get_name_map("seasons")
+    exhibitions = await get_name_map("exhibitions")
+    salesmen = await get_name_map("salesmen")
+    lines = await get_name_map("lines")
+    city_map = {c["id"]: c.get("city", "") for c in await fetch_all(db.customers.find({}, {"_id": 0}), "customers")}
+    raw_orders = await fetch_all(
+        db.sale_orders.find({"items.brand_id": brand_id}, {"_id": 0}).sort("order_date", -1), "sale_orders"
+    )
+    detail_map = await dispatched_detail_bulk([o["id"] for o in raw_orders])
+    orders = []
+    order_ids = []
+    order_customer = {}
+    agg = {"ordered": 0, "dispatched": 0, "pending": 0, "amount": 0, "dispatched_value": 0}
+    for o in raw_orders:
+        detail = detail_map.get(o["id"], {})
+        dispatched = {bid: d["qty"] for bid, d in detail.items()}
+        row = next((r for r in build_brand_rows(o, dispatched, names, detail) if r["brand_id"] == brand_id), None)
+        if row is None:
+            continue
+        order_ids.append(o["id"])
+        order_customer[o["id"]] = o.get("customer_id")
+        # Status is the whole order's, not this brand's: an order is what gets
+        # dispatched, and calling a line "done" while the rest of its order is
+        # still outstanding would read as a shipment that never happened.
+        t = compute_order_totals(o, dispatched)
+        agg["ordered"] += row["ordered"]
+        agg["dispatched"] += row["dispatched"]
+        agg["pending"] += row["pending"]
+        agg["amount"] += row["ordered_value"]
+        agg["dispatched_value"] += row["dispatched_value"]
+        orders.append({
+            "id": o["id"],
+            "state": o.get("state") or "open",
+            "status": t["status"],
+            "order_date": o.get("order_date"),
+            "dispatch_date": o.get("dispatch_date"),
+            "event_type": o.get("event_type"),
+            "customer": customers.get(o.get("customer_id")),
+            "customer_id": o.get("customer_id"),
+            "city": city_map.get(o.get("customer_id"), ""),
+            "exhibition": exhibitions.get(o.get("exhibition_id")),
+            "salesman": salesmen.get(o.get("salesman_id")),
+            "line": lines.get(o.get("line_id")),
+            "season": seasons.get(o.get("season_id")),
+            # This brand's share of the order, and the order's size behind it
+            "rate": row["rate"],
+            "ordered": row["ordered"],
+            "dispatched": row["dispatched"],
+            "pending": row["pending"],
+            "amount": row["ordered_value"],
+            "dispatched_value": row["dispatched_value"],
+            "order_qty": t["ordered_qty"],
+        })
+    timeline = []
+    if order_ids:
+        async for d in db.dispatch_orders.find({"sale_order_id": {"$in": order_ids}}, {"_id": 0}):
+            mine = [it for it in d.get("items", []) if it.get("brand_id") == brand_id]
+            if not mine:
+                continue
+            priced = [it["amount"] for it in mine if it.get("amount") is not None]
+            timeline.append({
+                "id": d["id"],
+                "sale_order_id": d["sale_order_id"],
+                "customer": customers.get(order_customer.get(d["sale_order_id"])),
+                "dispatch_date": d.get("dispatch_date"),
+                "created_at": d.get("created_at"),
+                "qty": sum(it.get("qty") or 0 for it in mine),
+                # None, not 0: nothing priced means "value it at the order rate",
+                # and a zero would read as goods that went out free.
+                "value": sum(priced) if priced else None,
+            })
+    timeline.sort(key=lambda x: (x.get("dispatch_date") or x.get("created_at") or ""), reverse=True)
+    return {
+        "brand": brand,
+        "orders": orders,
+        "timeline": timeline,
+        "summary": {
+            **agg,
+            "order_count": len(orders),
+            "customer_count": len({c for c in order_customer.values() if c}),
+        },
+    }
 
 
 # ---------- Backup ----------

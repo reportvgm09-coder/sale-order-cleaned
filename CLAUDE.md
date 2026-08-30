@@ -60,6 +60,11 @@ on several order lines at different rates.
 `/reports` and the expense summary. They must always agree. There is a test
 asserting exactly that. Do not add a fifth without one.
 
+The brand ledger is not a fifth: it reads `dispatched_value` straight off
+`build_brand_rows()`, which is the same `brand_dispatched_value()` the other
+four run on. Anything new that needs this figure should do the same rather than
+sum it again.
+
 ### An order's state is set by hand; its status is not
 
 Two different things, deliberately kept apart. `status` (pending / partial /
@@ -188,6 +193,31 @@ Every inline "add new" — including the pickers on the Fast Entry pad, which ca
 create a customer, brand, exhibition, salesman or season without leaving the
 row — goes through `addMasterConfirmed()`, so the warning still fires. A quick
 add that posted straight to the API would quietly undo the whole point of it.
+
+### The brand ledger is the customer ledger read down the other axis
+
+`/customers/:id` answers "what does this shop still have coming". `/brands/:id`
+answers "how is this brand moving, and who is holding it" — same shape, same
+dialogs, the other axis of the same order lines.
+
+Every figure on it is **that brand's share of the order, not the order**, which
+is why the ordered column also prints the whole order's size beneath it. Two
+things are deliberately the whole order's, not the brand's:
+
+- **Status.** An order is what gets dispatched. Calling one brand "done" while
+  the rest of its order is still outstanding reads as a shipment that never
+  happened.
+- **What Edit and Dispatch open.** A brand row is one order *line*, so the page
+  fetches the full order through `/sale-orders/{id}` on click and hands it to
+  the shared dialogs — the same trick `Reports.jsx` uses for the same reason.
+
+The overview counts an order once per brand it carries, so a brand's "orders" is
+how many orders it appears on. Customer counts are per brand and deliberately
+have **no** grand total: one shop buying three brands would be counted three
+times.
+
+`items.brand_id` is indexed, because the history looks orders up by the brands
+sitting on their lines.
 
 ### The Orders grid is driven by one column list
 
