@@ -2,7 +2,9 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
 import os
 import logging
 import re
@@ -335,8 +337,13 @@ class ExpenseIn(BaseModel):
 
 # ---------- Helpers ----------
 async def get_name_map(coll):
-    docs = await fetch_all(db[coll].find({}, {"_id": 0}), coll)
+    docs = await fetch_all(db[coll].find({}, {"_id": 0, "id": 1, "name": 1}), coll)
     return {d["id"]: d["name"] for d in docs}
+
+
+async def get_city_map():
+    docs = await fetch_all(db.customers.find({}, {"_id": 0, "id": 1, "city": 1}), "customers")
+    return {c["id"]: c.get("city", "") for c in docs}
 
 
 async def dispatched_by_brand(sale_order_id):
@@ -354,8 +361,11 @@ async def dispatched_detail_bulk(sale_order_ids):
     amount. Older dispatches have none, and a brand can be part priced and part
     not, so the two are tracked separately rather than assumed to move together.
     """
-    result = {oid: {} for oid in sale_order_ids}
-    async for d in db.dispatch_orders.find({"sale_order_id": {"$in": list(sale_order_ids)}}, {"_id": 0}):
+    result = {oid: {} for oid in sale_order_ids or ()}
+    # None means every dispatch, so an endpoint reading every order can fetch
+    # both at once instead of waiting for the order ids first.
+    query = {} if sale_order_ids is None else {"sale_order_id": {"$in": list(sale_order_ids)}}
+    async for d in db.dispatch_orders.find(query, {"_id": 0}):
         bucket = result.setdefault(d["sale_order_id"], {})
         for it in d.get("items", []):
             b = bucket.setdefault(it["brand_id"], {"qty": 0.0, "amount": 0.0, "qty_priced": 0.0})
@@ -678,16 +688,15 @@ async def get_sale_order(order_id: str):
     o = await db.sale_orders.find_one({"id": order_id}, {"_id": 0})
     if not o:
         raise HTTPException(404, "Sale order not found")
-    brands = await get_name_map("brands")
-    exhibitions = await get_name_map("exhibitions")
-    salesmen = await get_name_map("salesmen")
-    seasons = await get_name_map("seasons")
-    lines = await get_name_map("lines")
-    detail = (await dispatched_detail_bulk([order_id])).get(order_id, {})
+    brands, exhibitions, salesmen, seasons, lines, detail_map, customer = await asyncio.gather(
+        get_name_map("brands"), get_name_map("exhibitions"), get_name_map("salesmen"),
+        get_name_map("seasons"), get_name_map("lines"), dispatched_detail_bulk([order_id]),
+        db.customers.find_one({"id": o.get("customer_id")}, {"_id": 0}),
+    )
+    detail = detail_map.get(order_id, {})
     dispatched = {bid: d["qty"] for bid, d in detail.items()}
     t = compute_order_totals(o, dispatched)
     t["dispatched_value"] = order_dispatched_value(o, detail)
-    customer = await db.customers.find_one({"id": o.get("customer_id")}, {"_id": 0})
     return {
         "order": {
             **o,
@@ -854,12 +863,11 @@ def in_range(date_str, start, end):
 
 @api_router.get("/expenses")
 async def list_expenses():
-    heads = await get_name_map("expense_heads")
-    exhibitions = await get_name_map("exhibitions")
-    salesmen = await get_name_map("salesmen")
-    seasons = await get_name_map("seasons")
-    lines = await get_name_map("lines")
-    docs = await fetch_all(db.expenses.find({}, {"_id": 0}).sort("expense_date", -1), "expenses")
+    heads, exhibitions, salesmen, seasons, lines, docs = await asyncio.gather(
+        get_name_map("expense_heads"), get_name_map("exhibitions"), get_name_map("salesmen"),
+        get_name_map("seasons"), get_name_map("lines"),
+        fetch_all(db.expenses.find({}, {"_id": 0}).sort("expense_date", -1), "expenses"),
+    )
     return [
         {
             **e,
@@ -955,13 +963,14 @@ async def expenses_summary(
                Amravati and the following week in Katni can be told apart.
                Exhibitions are unaffected; they have no lines.
     """
-    heads = await get_name_map("expense_heads")
-    exhibitions = await get_name_map("exhibitions")
-    salesmen = await get_name_map("salesmen")
-    line_map = {ln["id"]: ln for ln in await fetch_all(db.lines.find({}, {"_id": 0}), "lines")}
-    expenses = await fetch_all(db.expenses.find({}, {"_id": 0}), "expenses")
-    orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
-    dispatched_map = await dispatched_detail_bulk([o["id"] for o in orders])
+    heads, exhibitions, salesmen, line_docs, expenses, orders, dispatched_map = await asyncio.gather(
+        get_name_map("expense_heads"), get_name_map("exhibitions"), get_name_map("salesmen"),
+        fetch_all(db.lines.find({}, {"_id": 0}), "lines"),
+        fetch_all(db.expenses.find({}, {"_id": 0}), "expenses"),
+        fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders"),
+        dispatched_detail_bulk(None),
+    )
+    line_map = {ln["id"]: ln for ln in line_docs}
 
     def keep(ctx, season_id, date_str):
         """One gate for expenses and orders alike - if the two sides were filtered
@@ -1091,11 +1100,11 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
                     season_id: Optional[str] = None, event_type: Optional[str] = None,
                     city: Optional[str] = None, line_id: Optional[str] = None,
                     overdue_only: bool = False):
-    all_orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
-    customers = await get_name_map("customers")
-    brands = await get_name_map("brands")
-    seasons = await get_name_map("seasons")
-    city_map = {c["id"]: c.get("city", "") for c in await fetch_all(db.customers.find({}, {"_id": 0}), "customers")}
+    all_orders, customers, brands, seasons, city_map, dispatched_map = await asyncio.gather(
+        fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders"),
+        get_name_map("customers"), get_name_map("brands"), get_name_map("seasons"),
+        get_city_map(), dispatched_by_brand_bulk(None),
+    )
     today_str = datetime.now(timezone.utc).date().isoformat()
 
     def keep(o):
@@ -1118,7 +1127,6 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
         return True
 
     orders = [o for o in all_orders if keep(o)]
-    dispatched_map = await dispatched_by_brand_bulk([o["id"] for o in orders])
 
     total_orders = 0
     orders_with_pending = 0
@@ -1180,15 +1188,12 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
 
 @api_router.get("/reports")
 async def reports():
-    orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
-    customers = await get_name_map("customers")
-    brands = await get_name_map("brands")
-    exhibitions = await get_name_map("exhibitions")
-    salesmen = await get_name_map("salesmen")
-    seasons = await get_name_map("seasons")
-    lines = await get_name_map("lines")
-    city_map = {c["id"]: c.get("city", "") for c in await fetch_all(db.customers.find({}, {"_id": 0}), "customers")}
-    detail_map = await dispatched_detail_bulk([o["id"] for o in orders])
+    orders, customers, brands, exhibitions, salesmen, seasons, lines, city_map, detail_map = await asyncio.gather(
+        fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders"),
+        get_name_map("customers"), get_name_map("brands"), get_name_map("exhibitions"),
+        get_name_map("salesmen"), get_name_map("seasons"), get_name_map("lines"),
+        get_city_map(), dispatched_detail_bulk(None),
+    )
     rows = []
     for o in orders:
         detail = detail_map.get(o["id"], {})
@@ -1235,9 +1240,11 @@ async def reports():
 # ---------- Customers overview & history ----------
 @api_router.get("/customers")
 async def customers_overview():
-    customers = await fetch_all(db.customers.find({}, {"_id": 0}).sort("name", 1), "customers")
-    orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
-    dispatched_map = await dispatched_by_brand_bulk([o["id"] for o in orders])
+    customers, orders, dispatched_map = await asyncio.gather(
+        fetch_all(db.customers.find({}, {"_id": 0}).sort("name", 1), "customers"),
+        fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders"),
+        dispatched_by_brand_bulk(None),
+    )
     stats = {}
     for o in orders:
         dispatched = dispatched_map.get(o["id"], {})
@@ -1254,12 +1261,11 @@ async def customer_history(customer_id: str):
     customer = await db.customers.find_one({"id": customer_id}, {"_id": 0})
     if not customer:
         raise HTTPException(404, "Customer not found")
-    brands = await get_name_map("brands")
-    seasons = await get_name_map("seasons")
-    exhibitions = await get_name_map("exhibitions")
-    salesmen = await get_name_map("salesmen")
-    lines = await get_name_map("lines")
-    raw_orders = await fetch_all(db.sale_orders.find({"customer_id": customer_id}, {"_id": 0}).sort("order_date", -1), "sale_orders")
+    brands, seasons, exhibitions, salesmen, lines, raw_orders = await asyncio.gather(
+        get_name_map("brands"), get_name_map("seasons"), get_name_map("exhibitions"),
+        get_name_map("salesmen"), get_name_map("lines"),
+        fetch_all(db.sale_orders.find({"customer_id": customer_id}, {"_id": 0}).sort("order_date", -1), "sale_orders"),
+    )
     detail_map = await dispatched_detail_bulk([o["id"] for o in raw_orders])
     orders = []
     order_ids = []
@@ -1341,10 +1347,12 @@ def blank_brand_stats():
 
 @api_router.get("/brands")
 async def brands_overview():
-    brand_docs = await fetch_all(db.brands.find({}, {"_id": 0}).sort("name", 1), "brands")
+    brand_docs, orders, detail_map = await asyncio.gather(
+        fetch_all(db.brands.find({}, {"_id": 0}).sort("name", 1), "brands"),
+        fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders"),
+        dispatched_detail_bulk(None),
+    )
     names = {b["id"]: b["name"] for b in brand_docs}
-    orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}), "sale_orders")
-    detail_map = await dispatched_detail_bulk([o["id"] for o in orders])
     stats = {}
     # Counted per brand, so the same order adds to every brand it carries - a
     # brand's "orders" is how many orders it appears on, not the whole book.
@@ -1372,15 +1380,10 @@ async def brand_history(brand_id: str):
     brand = await db.brands.find_one({"id": brand_id}, {"_id": 0})
     if not brand:
         raise HTTPException(404, "Brand not found")
-    names = await get_name_map("brands")
-    customers = await get_name_map("customers")
-    seasons = await get_name_map("seasons")
-    exhibitions = await get_name_map("exhibitions")
-    salesmen = await get_name_map("salesmen")
-    lines = await get_name_map("lines")
-    city_map = {c["id"]: c.get("city", "") for c in await fetch_all(db.customers.find({}, {"_id": 0}), "customers")}
-    raw_orders = await fetch_all(
-        db.sale_orders.find({"items.brand_id": brand_id}, {"_id": 0}).sort("order_date", -1), "sale_orders"
+    names, customers, seasons, exhibitions, salesmen, lines, city_map, raw_orders = await asyncio.gather(
+        get_name_map("brands"), get_name_map("customers"), get_name_map("seasons"),
+        get_name_map("exhibitions"), get_name_map("salesmen"), get_name_map("lines"), get_city_map(),
+        fetch_all(db.sale_orders.find({"items.brand_id": brand_id}, {"_id": 0}).sort("order_date", -1), "sale_orders"),
     )
     detail_map = await dispatched_detail_bulk([o["id"] for o in raw_orders])
     orders = []
@@ -1558,6 +1561,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Order lists run to hundreds of kilobytes of JSON; compressed they are a
+# fraction of that, which is most of the wait on a slow connection.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 if _origins == ["*"]:
     logger.warning("CORS_ORIGINS is '*' - set it to your site's address once deployed.")
 

@@ -1,6 +1,8 @@
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
-import * as XLSX from "xlsx";
+// The spreadsheet libraries are well over a megabyte between them and only
+// matter when somebody exports or imports, so they load on first use rather
+// than with every page.
+const loadExcelJS = () => import("exceljs").then((m) => m.default || m);
+const loadXLSX = () => import("xlsx");
 
 const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002FA7" } };
 const ZEBRA_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F6FB" } };
@@ -95,6 +97,7 @@ function addSheet(wb, name, rows) {
 
 async function saveWorkbook(wb, fileName) {
   const buf = await wb.xlsx.writeBuffer();
+  const { saveAs } = await import("file-saver");
   saveAs(
     new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
     fileName
@@ -102,18 +105,21 @@ async function saveWorkbook(wb, fileName) {
 }
 
 export async function downloadSheet(rows, sheetName, fileName) {
+  const ExcelJS = await loadExcelJS();
   const wb = new ExcelJS.Workbook();
   addSheet(wb, sheetName, rows);
   await saveWorkbook(wb, fileName);
 }
 
 export async function downloadMultiSheet(sheets, fileName) {
+  const ExcelJS = await loadExcelJS();
   const wb = new ExcelJS.Workbook();
   sheets.forEach((s) => addSheet(wb, s.name, s.rows));
   await saveWorkbook(wb, fileName);
 }
 
 export async function downloadTemplateWithLists(columns, sampleRow, lists, fileName) {
+  const ExcelJS = await loadExcelJS();
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Template", { views: [{ state: "frozen", ySplit: 1 }] });
   ws.columns = columns.map((h) => ({ header: h, key: h, width: Math.max(14, h.length + 4) }));
@@ -145,7 +151,8 @@ export async function downloadTemplateWithLists(columns, sampleRow, lists, fileN
   await saveWorkbook(wb, fileName);
 }
 
-export function readWorkbookRows(file) {
+export async function readWorkbookRows(file) {
+  const XLSX = await loadXLSX();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
