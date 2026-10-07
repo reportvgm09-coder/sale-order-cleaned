@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DispatchDialog, EditOrderDialog } from "@/components/OrderDialogs";
 import { ExportDialog } from "@/components/ExportDialog";
 import { toast } from "sonner";
-import { FileSpreadsheet, Printer, FilterX, Pencil, Truck } from "lucide-react";
+import { FileSpreadsheet, Printer, FilterX, Pencil, Truck, ArrowUp, ArrowDown } from "lucide-react";
 import { Loader } from "@/components/Loader";
 
 const EVENT_LABEL = { exhibition: "Exhibition", door_to_door: "Door to Door" };
@@ -28,6 +28,22 @@ const GROUP_DIMS = [
 
 const uniq = (arr) => Array.from(new Set(arr.filter(Boolean))).sort();
 
+// Detailed Lines headings. `get` is what the column sorts on, which for Event
+// and Via is what is printed rather than the raw field.
+const DETAIL_COLS = [
+  { key: "sale_order_id", label: "Order", get: (r) => r.sale_order_id },
+  { key: "customer", label: "Customer", get: (r) => r.customer },
+  { key: "brand", label: "Brand", get: (r) => r.brand },
+  { key: "event_type", label: "Event", get: (r) => eventLabel(r.event_type) },
+  { key: "via", label: "Via", get: (r) => r.exhibition || r.salesman },
+  { key: "season", label: "Season", get: (r) => r.season },
+  { key: "ordered_qty", label: "Ordered", num: true, get: (r) => r.ordered_qty },
+  { key: "dispatched_qty", label: "Dispatched", num: true, get: (r) => r.dispatched_qty },
+  { key: "pending_qty", label: "Pending", num: true, get: (r) => r.pending_qty },
+  { key: "amount", label: "Amount", num: true, get: (r) => r.amount },
+  { key: "dispatched_value", label: "Dispatched ₹", num: true, get: (r) => r.dispatched_value },
+];
+
 export default function Reports() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +53,7 @@ export default function Reports() {
   const [dialog, setDialog] = useState(null); // { mode: "edit" | "dispatch", order, customer }
   const [busy, setBusy] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [sort, setSort] = useState(null); // { key, dir } - null keeps the server's order
   const { requireUnlock } = useAuth();
 
   const load = async () => {
@@ -114,6 +131,22 @@ export default function Reports() {
     [rows, f]
   );
 
+  const sorted = useMemo(() => {
+    const col = sort && DETAIL_COLS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const factor = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const x = col.get(a);
+      const y = col.get(b);
+      if (col.num) return ((Number(x) || 0) - (Number(y) || 0)) * factor;
+      // numeric: true so order 9 comes before order 10, not after it.
+      return String(x ?? "").localeCompare(String(y ?? ""), "en", { numeric: true }) * factor;
+    });
+  }, [filtered, sort]);
+
+  const toggleSort = (key) =>
+    setSort((p) => (p?.key === key ? { key, dir: p.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+
   const totals = useMemo(
     () =>
       filtered.reduce(
@@ -155,7 +188,7 @@ export default function Reports() {
   const exportSheets = [
     {
       name: "Detail",
-      data: filtered,
+      data: sorted,
       columns: [
         { key: "Sale Order", get: (r) => r.sale_order_id },
         { key: "Customer", get: (r) => r.customer },
@@ -331,22 +364,27 @@ export default function Reports() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-secondary/60">
-                  <TableHead className="text-xs uppercase tracking-widest">Order</TableHead>
-                  <TableHead className="text-xs uppercase tracking-widest">Customer</TableHead>
-                  <TableHead className="text-xs uppercase tracking-widest">Brand</TableHead>
-                  <TableHead className="text-xs uppercase tracking-widest">Event</TableHead>
-                  <TableHead className="text-xs uppercase tracking-widest">Via</TableHead>
-                  <TableHead className="text-xs uppercase tracking-widest">Season</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Ordered</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Pending</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>
+                  {DETAIL_COLS.map((c) => (
+                    <TableHead key={c.key} className={`text-xs uppercase tracking-widest ${c.num ? "text-right" : ""}`}>
+                      <button
+                        type="button"
+                        data-testid={`report-sort-${c.key}`}
+                        onClick={() => toggleSort(c.key)}
+                        className={`inline-flex items-center gap-0.5 whitespace-nowrap uppercase tracking-widest hover:text-foreground ${
+                          sort?.key === c.key ? "text-foreground" : ""
+                        }`}
+                      >
+                        {c.label}
+                        {sort?.key === c.key &&
+                          (sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                      </button>
+                    </TableHead>
+                  ))}
                   <TableHead className="text-right text-xs uppercase tracking-widest no-print">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((r, i) => (
+                {sorted.map((r, i) => (
                   <TableRow key={`${r.sale_order_id}-${r.brand}-${i}`} className="hover:bg-secondary/40">
                     <TableCell className="font-mono font-semibold">{r.sale_order_id}</TableCell>
                     <TableCell>{r.customer}{r.city ? <span className="ml-1 text-xs text-muted-foreground">· {r.city}</span> : null}</TableCell>
