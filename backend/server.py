@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
@@ -7,6 +7,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
+import base64
 import json
 import os
 import logging
@@ -94,6 +95,10 @@ SALESMAN_ROUTES = {
     ("PUT", "/api/sale-orders/{order_id}"),
     ("DELETE", "/api/sale-orders/{order_id}"),
     ("GET", "/api/expenses"),
+    ("GET", "/api/sale-orders/{order_id}/photos"),
+    ("POST", "/api/sale-orders/{order_id}/photos"),
+    ("GET", "/api/photos/{photo_id}"),
+    ("DELETE", "/api/photos/{photo_id}"),
     ("POST", "/api/expenses"),
     ("PUT", "/api/expenses/{expense_id}"),
     ("DELETE", "/api/expenses/{expense_id}"),
@@ -198,13 +203,27 @@ def is_salesman(user):
     return (user or {}).get("role") == "salesman"
 
 
+NOT_YOURS = "You can only change entries you entered yourself - ask the office to change this one"
+
+
+def salesman_scope(user):
+    """What a salesman sees: everything filed under his salesman in Masters -
+    including orders the office entered before he had a login - plus anything
+    he entered himself, exhibitions included. Changing is narrower: only what
+    he entered (see salesman_rules)."""
+    mine = [{"created_by": user["id"]}]
+    if user.get("salesman_id"):
+        mine.append({"salesman_id": user["salesman_id"]})
+    return {"$or": mine}
+
+
 async def salesman_rules(doc, user, existing=None):
     """A salesman's entry is always his own: stamped with his login, and when it
     is door-to-door it is him, on one of his own lines. An edit keeps what only
     the office decides - the order's state and its dispatch date."""
     if existing is not None:
         if existing.get("created_by") != user["id"]:
-            raise HTTPException(404, "That entry is not one of yours")
+            raise HTTPException(403, NOT_YOURS)
         for k in ("state", "dispatch_date"):
             if k in existing:
                 doc[k] = existing[k]
@@ -300,11 +319,17 @@ INDEXES = [
     ("expenses", "id", True),
     ("expenses", "exhibition_id", False),
     ("expenses", "salesman_id", False),
+    # a salesman's lists are looked up by these two
+    ("expenses", "created_by", False),
+    ("sale_orders", "created_by", False),
+    ("sale_orders", "salesman_id", False),
     ("expenses", "expense_date", False),
     ("expenses", "created_at", False),
     ("lines", LINE_OWNER, False),
     ("users", "id", True),
     ("users", "username_lc", True),
+    ("order_photos", "id", True),
+    ("order_photos", "order_id", False),
 ] + [(coll, field, field == "id") for coll in MASTER_TYPES.values() for field in ("id", "name")]
 
 
@@ -628,20 +653,31 @@ def compute_order_totals(order, dispatched):
     }
 
 
+async def photo_counts(order_ids):
+    """{order_id: number of photos}. Reads only the order_id field - never an image."""
+    docs = await fetch_all(
+        db.order_photos.find({"order_id": {"$in": list(order_ids)}}, {"_id": 0, "order_id": 1}), "order_photos")
+    out = {}
+    for d in docs:
+        out[d["order_id"]] = out.get(d["order_id"], 0) + 1
+    return out
+
+
 async def enrich_order(order):
-    dispatched = await dispatched_by_brand(order["id"])
+    dispatched, photos = await asyncio.gather(dispatched_by_brand(order["id"]), photo_counts([order["id"]]))
     totals = compute_order_totals(order, dispatched)
-    return {**order, "state": order.get("state") or "open",
+    return {**order, "state": order.get("state") or "open", "photo_count": photos.get(order["id"], 0),
             "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}}
 
 
 async def enrich_orders(orders):
     """Bulk version of enrich_order for lists - one dispatch query total instead of one per order."""
-    dispatched_map = await dispatched_by_brand_bulk([o["id"] for o in orders])
+    ids = [o["id"] for o in orders]
+    dispatched_map, photos = await asyncio.gather(dispatched_by_brand_bulk(ids), photo_counts(ids))
     result = []
     for o in orders:
         totals = compute_order_totals(o, dispatched_map.get(o["id"], {}))
-        result.append({**o, "state": o.get("state") or "open",
+        result.append({**o, "state": o.get("state") or "open", "photo_count": photos.get(o["id"], 0),
                        "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}})
     return result
 
@@ -836,7 +872,7 @@ async def delete_master(mtype: str, mid: str):
 # ---------- Sale Orders ----------
 @api_router.get("/sale-orders")
 async def list_sale_orders(user: dict = Depends(require_auth)):
-    query = {"created_by": user["id"]} if is_salesman(user) else {}
+    query = salesman_scope(user) if is_salesman(user) else {}
     orders = await fetch_all(db.sale_orders.find(query, {"_id": 0}).sort("created_at", -1), "sale_orders")
     return await enrich_orders(orders)
 
@@ -886,6 +922,7 @@ async def update_sale_order(order_id: str, body: SaleOrderIn, user: dict = Depen
     await db.sale_orders.insert_one(dict(doc))
     if new_id != order_id:
         await db.dispatch_orders.update_many({"sale_order_id": order_id}, {"$set": {"sale_order_id": new_id}})
+        await db.order_photos.update_many({"order_id": order_id}, {"$set": {"order_id": new_id}})
     return await enrich_order({k: v for k, v in doc.items() if k != "_id"})
 
 
@@ -925,6 +962,7 @@ async def get_sale_order(order_id: str):
 async def bulk_delete_sale_orders(body: BulkIds):
     res = await db.sale_orders.delete_many({"id": {"$in": body.ids}})
     await db.dispatch_orders.delete_many({"sale_order_id": {"$in": body.ids}})
+    await db.order_photos.delete_many({"order_id": {"$in": body.ids}})
     return {"deleted": res.deleted_count}
 
 
@@ -933,10 +971,11 @@ async def delete_sale_order(order_id: str, user: dict = Depends(require_auth)):
     if is_salesman(user):
         mine = await db.sale_orders.find_one({"id": order_id, "created_by": user["id"]})
         if not mine:
-            raise HTTPException(404, "That entry is not one of yours")
+            raise HTTPException(403, NOT_YOURS)
         await salesman_may_change_order(order_id, user)
     await db.sale_orders.delete_one({"id": order_id})
     await db.dispatch_orders.delete_many({"sale_order_id": order_id})
+    await db.order_photos.delete_many({"order_id": order_id})
     return {"ok": True}
 
 
@@ -1077,7 +1116,7 @@ def in_range(date_str, start, end):
 
 @api_router.get("/expenses")
 async def list_expenses(user: dict = Depends(require_auth)):
-    query = {"created_by": user["id"]} if is_salesman(user) else {}
+    query = salesman_scope(user) if is_salesman(user) else {}
     heads, exhibitions, salesmen, seasons, lines, docs = await asyncio.gather(
         get_name_map("expense_heads"), get_name_map("exhibitions"), get_name_map("salesmen"),
         get_name_map("seasons"), get_name_map("lines"),
@@ -1150,7 +1189,7 @@ async def bulk_delete_expenses(body: BulkIds):
 @api_router.delete("/expenses/{expense_id}")
 async def delete_expense(expense_id: str, user: dict = Depends(require_auth)):
     if is_salesman(user) and not await db.expenses.find_one({"id": expense_id, "created_by": user["id"]}):
-        raise HTTPException(404, "That entry is not one of yours")
+        raise HTTPException(403, NOT_YOURS)
     await db.expenses.delete_one({"id": expense_id})
     return {"ok": True}
 
@@ -1716,7 +1755,101 @@ async def brand_history(brand_id: str):
     }
 
 
+# ---------- Order photos ----------
+# A picture of the paper order form, kept with the order. They live in MongoDB
+# because Render's free disk is wiped on every restart. The browser shrinks
+# each one first (lib/photos.js), and MAX_PHOTO_BYTES backs that up, because
+# the free Atlas plan is 512 MB for everything.
+#
+# Seeing a photo follows seeing its order. Adding or removing one is a change
+# to the order, so a salesman may do it only on orders he entered; viewers are
+# refused by method, as for every write.
+MAX_PHOTO_BYTES = 700_000
+MAX_PHOTOS_PER_ORDER = 5
+PHOTO_TYPES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": "image/webp"}
+
+
+class PhotoIn(BaseModel):
+    data: str  # base64, no "data:" prefix
+
+
+async def order_for(order_id, user, change=False):
+    """The order, if this login may see it - and, with change, alter it."""
+    order = await db.sale_orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(404, "That order no longer exists - refresh the page")
+    if is_salesman(user):
+        if change and order.get("created_by") != user["id"]:
+            raise HTTPException(403, NOT_YOURS)
+        if not (order.get("created_by") == user["id"] or
+                (user.get("salesman_id") and order.get("salesman_id") == user["salesman_id"])):
+            raise HTTPException(404, "That order no longer exists - refresh the page")
+    return order
+
+
+def photo_meta(doc):
+    return {k: doc.get(k) for k in ("id", "order_id", "size", "created_at", "created_by")}
+
+
+@api_router.get("/sale-orders/{order_id}/photos")
+async def list_order_photos(order_id: str, user: dict = Depends(require_auth)):
+    await order_for(order_id, user)
+    docs = await fetch_all(
+        db.order_photos.find({"order_id": order_id}, {"_id": 0, "data": 0}).sort("created_at", 1), "order_photos")
+    return [photo_meta(d) for d in docs]
+
+
+@api_router.post("/sale-orders/{order_id}/photos")
+async def add_order_photo(order_id: str, body: PhotoIn, user: dict = Depends(require_auth)):
+    await order_for(order_id, user, change=True)
+    try:
+        raw = base64.b64decode(body.data, validate=True)
+    except Exception:
+        raise HTTPException(400, "That photo did not arrive whole - try attaching it again")
+    kind = next((t for magic, t in PHOTO_TYPES.items() if raw.startswith(magic)), None)
+    if not kind:
+        raise HTTPException(400, "Attach a photo (JPEG, PNG or WebP)")
+    if len(raw) > MAX_PHOTO_BYTES:
+        raise HTTPException(400, "That photo is too large - attach it again from the app, which shrinks it first")
+    if len(await fetch_all(db.order_photos.find({"order_id": order_id}, {"_id": 0, "id": 1}), "order_photos")) >= MAX_PHOTOS_PER_ORDER:
+        raise HTTPException(400, f"An order can have up to {MAX_PHOTOS_PER_ORDER} photos - remove one first")
+    doc = {"id": gen_id("PHOTO"), "order_id": order_id, "content_type": kind, "data": raw, "size": len(raw),
+           "created_by": user["id"], "created_at": now_iso()}
+    await db.order_photos.insert_one(dict(doc))
+    return photo_meta(doc)
+
+
+@api_router.get("/photos/{photo_id}")
+async def get_photo(photo_id: str, user: dict = Depends(require_auth)):
+    doc = await db.order_photos.find_one({"id": photo_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "That photo has been removed")
+    await order_for(doc["order_id"], user)
+    # private: it carries a login, so no shared cache should keep a copy
+    return Response(bytes(doc["data"]), media_type=doc.get("content_type") or "image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
+
+
+@api_router.delete("/photos/{photo_id}")
+async def delete_photo(photo_id: str, user: dict = Depends(require_auth)):
+    doc = await db.order_photos.find_one({"id": photo_id}, {"_id": 0, "data": 0})
+    if not doc:
+        raise HTTPException(404, "That photo has been removed")
+    await order_for(doc["order_id"], user, change=True)
+    await db.order_photos.delete_one({"id": photo_id})
+    return {"ok": True}
+
+
+@api_router.get("/photos-usage")
+async def photos_usage():
+    """How much of the database the photos take, for the Masters page."""
+    docs = await fetch_all(db.order_photos.find({}, {"_id": 0, "size": 1}), "order_photos")
+    return {"count": len(docs), "bytes": sum(d.get("size") or 0 for d in docs)}
+
+
 # ---------- Backup ----------
+# order_photos is left out: a backup is one JSON file, and the photos would
+# swell it from kilobytes to hundreds of megabytes.
 BACKUP_COLLECTIONS = [
     "customers", "brands", "exhibitions", "salesmen", "seasons", "expense_heads", "lines",
     "sale_orders", "dispatch_orders", "expenses",
@@ -1768,14 +1901,15 @@ async def login(body: LoginIn):
         username, role, sid = doc["username"], doc.get("role", "viewer"), doc.get("salesman_id")
     token = jwt.encode({**claims, "exp": expires}, JWT_SECRET, algorithm="HS256")
     logger.info("Signed in as %s", username)
-    return {"token": token, "username": username, "role": role, "owner": is_owner, "salesman_id": sid,
+    return {"token": token, "id": OWNER_ID if is_owner else doc["id"], "username": username, "role": role,
+            "owner": is_owner, "salesman_id": sid,
             "expires_at": expires.isoformat()}
 
 
 @api_router.get("/auth/me")
 async def whoami(user: dict = Depends(require_auth)):
     """Used by the browser on load to check a stored token is still good."""
-    return {"username": user["username"], "role": user["role"], "owner": user["owner"],
+    return {"id": user["id"], "username": user["username"], "role": user["role"], "owner": user["owner"],
             "salesman_id": user["salesman_id"]}
 
 

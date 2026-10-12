@@ -20,7 +20,7 @@ const blankLine = () => ({ key: `l-${++lineKey}`, head_id: "", amount: "", note:
 // The salesman's half of Expenses: put in what a day or a trip cost, and see
 // his own entries. None of the profit-and-loss side - that is the office's.
 export default function MyExpenses() {
-  const { salesmanId } = useAuth();
+  const { salesmanId, userId } = useAuth();
   const [masters, setMasters] = useState({ exhibitions: [], seasons: [], expense_heads: [], lines: [] });
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -144,7 +144,7 @@ export default function MyExpenses() {
     <div className="space-y-6" data-testid="my-expenses-view">
       <div>
         <h1 className="font-display text-3xl font-extrabold tracking-tight">Expenses</h1>
-        <p className="text-sm text-muted-foreground">What a day or a trip cost. Only the expenses you enter are shown here.</p>
+        <p className="text-sm text-muted-foreground">What a day or a trip cost - yours, and any the office entered under your name.</p>
       </div>
 
       <Card className="rounded-sm border-2 border-border p-4 shadow-none sm:p-5" data-testid="my-expense-form">
@@ -316,6 +316,10 @@ export default function MyExpenses() {
                 </div>
                 <div className="text-right">
                   <div className="font-semibold tabular-nums">{inr(e.total)}</div>
+                  {/* the office's vouchers for him are his to see, not to change */}
+                  {e.created_by !== userId ? (
+                    <div className="mt-1"><span data-testid="entered-by-office" className="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Entered by office</span></div>
+                  ) : (
                   <div className="mt-1 flex justify-end gap-1">
                     <Button data-testid={`my-expense-edit-${e.id}`} variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => startEdit(e)}>
                       <Pencil className="h-4 w-4" />
@@ -324,6 +328,7 @@ export default function MyExpenses() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+                  )}
                 </div>
               </li>
             ))}

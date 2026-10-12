@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { OrderPhotos, PhotosButton, uploadPending } from "@/components/OrderPhotos";
 import { toast } from "sonner";
 import { Plus, X, Save, Pencil, Trash2, ScrollText } from "lucide-react";
 
@@ -24,12 +25,14 @@ const blankItem = () => ({ key: `it-${++itemKey}`, brand_id: "", qty: "" });
 // Everything about which salesman it is gets decided by the server from his
 // login, so there is no salesman field here at all.
 export default function MyOrders() {
-  const { salesmanId } = useAuth();
+  const { salesmanId, userId } = useAuth();
   const [masters, setMasters] = useState({ customers: [], brands: [], exhibitions: [], seasons: [], lines: [], salesmen: [] });
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
+  // photos taken for an order not saved yet - uploaded once it is
+  const [pendingPhotos, setPendingPhotos] = useState([]);
   // { type, name, city, apply } - one small dialog for a new shop or a new line
   const [newMaster, setNewMaster] = useState(null);
   const [draft, setDraft] = useState(() => ({
@@ -83,6 +86,7 @@ export default function MyOrders() {
   // or the same stall is only a customer and a few brands away.
   const nextOrder = () => {
     setEditing(null);
+    setPendingPhotos([]);
     setDraft((d) => ({ ...d, id: genOrderId(), customer_id: "", items: [blankItem()] }));
   };
 
@@ -115,7 +119,9 @@ export default function MyOrders() {
         toast.success(`Order ${draft.id} updated`);
       } else {
         await api.createSaleOrder(payload);
+        const failed = await uploadPending(draft.id, pendingPhotos);
         toast.success(`Order ${draft.id} saved - ${num(totalPcs)} pcs`);
+        if (failed) toast.error(`${failed} photo${failed === 1 ? "" : "s"} did not upload - open the order and attach ${failed === 1 ? "it" : "them"} again`);
       }
       nextOrder();
       load();
@@ -179,7 +185,7 @@ export default function MyOrders() {
       <div>
         <h1 className="font-display text-3xl font-extrabold tracking-tight">Orders</h1>
         <p className="text-sm text-muted-foreground">
-          {myName ? `Entering as ${myName}. ` : ""}Only the orders you enter are shown here.
+          {myName ? `Entering as ${myName}. ` : ""}Your orders, including any the office entered under your name.
         </p>
       </div>
 
@@ -320,6 +326,18 @@ export default function MyOrders() {
           </div>
         </div>
 
+        <div className="mt-5 space-y-2">
+          <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Photo of the order form</div>
+          <OrderPhotos
+            orderId={editing}
+            pending={pendingPhotos}
+            setPending={setPendingPhotos}
+            canChange
+            testid="my-order-photos"
+          />
+          {editing && <p className="text-xs text-muted-foreground">Photos are saved as soon as you add or remove them.</p>}
+        </div>
+
         <Button data-testid="my-order-save" onClick={save} disabled={saving} className="mt-4 w-full gap-2 rounded-sm sm:w-auto">
           <Save className="h-4 w-4" /> {editing ? "Save changes" : "Save order"}
         </Button>
@@ -329,7 +347,7 @@ export default function MyOrders() {
         <div className="border-b border-border p-4">
           <h2 className="font-display text-lg font-bold tracking-tight">My orders</h2>
           <p className="text-xs text-muted-foreground">
-            {num(orders.length)} order{orders.length === 1 ? "" : "s"}. Once goods go out on an order, only the office can change it.
+            {num(orders.length)} order{orders.length === 1 ? "" : "s"}, including any the office entered under your name. You can change the ones you entered until goods go out.
           </p>
         </div>
         {orders.length === 0 ? (
@@ -338,7 +356,10 @@ export default function MyOrders() {
           <ul className="divide-y divide-border">
             {orders.map((o) => {
               const t = o.totals || {};
-              const locked = (t.dispatched_qty || 0) > 0;
+              // Orders the office entered under his name are his to see, not to change.
+              const byOffice = o.created_by !== userId;
+              const locked = byOffice || (t.dispatched_qty || 0) > 0;
+              const why = byOffice ? "Entered by the office - ask them to change it" : "Goods have gone out - ask the office to change it";
               return (
                 <li key={o.id} className="flex flex-wrap items-start justify-between gap-3 p-4" data-testid={`my-order-${o.id}`}>
                   <div className="min-w-0 flex-1">
@@ -346,6 +367,8 @@ export default function MyOrders() {
                       <span className="font-medium">{nameOf("customers", o.customer_id)}</span>
                       <StatusBadge status={t.status} />
                       <StateBadge state={o.state} />
+                      <PhotosButton order={o} canChange={!byOffice} />
+                      {byOffice && <span data-testid="entered-by-office" className="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Entered by office</span>}
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
                       {o.id} · {fmtDate(o.order_date)} ·{" "}
@@ -367,7 +390,7 @@ export default function MyOrders() {
                         size="icon"
                         className="h-8 w-8"
                         disabled={locked}
-                        title={locked ? "Goods have gone out - ask the office to change it" : "Edit"}
+                        title={locked ? why : "Edit"}
                         onClick={() => startEdit(o)}
                       >
                         <Pencil className="h-4 w-4" />
@@ -378,7 +401,7 @@ export default function MyOrders() {
                         size="icon"
                         className="h-8 w-8 text-destructive"
                         disabled={locked}
-                        title={locked ? "Goods have gone out - ask the office to change it" : "Delete"}
+                        title={locked ? why : "Delete"}
                         onClick={() => remove(o)}
                       >
                         <Trash2 className="h-4 w-4" />

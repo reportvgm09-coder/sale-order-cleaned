@@ -381,11 +381,15 @@ other address back to the first. Hiding pages is not the protection, though. On 
   the server refuses the role without a valid one. `salesman_rules()` forces
   his door-to-door entries onto that salesman and his own lines, whatever the
   browser sent. Exhibition entries are allowed - salesmen staff stalls too.
-- **He sees only what he entered.** Orders and expense vouchers now carry
-  `created_by` (the user id, or `owner`). Entries from before this have none,
-  so they are invisible to every salesman, which is the safe direction. Both
-  PUTs replace the whole document, so they **copy `created_by` across** - drop
-  that and an office edit would take the order away from the man who took it.
+- **He sees his salesman's entries, and changes only his own.** Orders and
+  expense vouchers carry `created_by` (the user id, or `owner`).
+  `salesman_scope()` shows him anything filed under his salesman in Masters -
+  so the orders the office entered for him before he had a login are there -
+  plus anything he entered himself. Editing or deleting needs `created_by` to
+  be him; the office's entries show "Entered by office" and are refused with
+  403. Both PUTs replace the whole document, so they **copy `created_by`
+  across** - drop that and an office edit would take the order away from the
+  man who took it.
 - **An edit by him keeps `state` and `dispatch_date`.** Those are the office's
   decisions, and his screen has no fields for them.
 - **Once anything has been dispatched, the order is the office's.** He can no
@@ -406,6 +410,29 @@ It is quantities only: orders, pieces ordered, sent and still to send.
   total.
 
 ---
+
+### Order form photos live in MongoDB, shrunk first
+
+A picture of the paper order form can be attached on the salesman's order
+screen and the office Sale Order form, up to 5 per order
+(`components/OrderPhotos.jsx`). They are stored in the `order_photos`
+collection, not on disk, because Render's free disk is wiped on every restart.
+
+- **The browser shrinks each photo** (`lib/photos.js`) to ~200 KB - a 9 MB
+  camera shot lands at about 170 KB, still readable. The server refuses
+  anything over 700 KB or not a JPEG/PNG/WebP, as a backstop. The free Atlas
+  plan is 512 MB for everything; the Masters page shows how much photos use.
+- **On a new order, photos wait in the form** and upload once the order is
+  saved (`uploadPending`). On an existing one they save as soon as they are
+  added or removed - say so wherever that form is reused.
+- **Images are fetched as blobs**, never `<img src="/api/...">`: the sign-in is
+  a header, which an `<img>` cannot send.
+- **Seeing follows the order** (`order_for`): anyone who can see an order can
+  see its photos, salesmen included for orders filed under them. Adding or
+  removing is a change, so a salesman may do it only on orders he entered.
+- Order lists carry `photo_count` (no images) for the paperclip. Photos follow
+  an order through a rename and are deleted with it.
+- **Not in the backup file** - it would grow from kilobytes to hundreds of MB.
 
 ### The map places customers by their typed city
 

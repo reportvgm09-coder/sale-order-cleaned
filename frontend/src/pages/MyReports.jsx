@@ -345,7 +345,7 @@ export default function MyReports() {
     <div className="space-y-6" data-testid="my-reports-view">
       <div>
         <h1 className="font-display text-3xl font-extrabold tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground">Summaries of the orders you have entered.</p>
+        <p className="text-sm text-muted-foreground">Summaries of your orders, including any the office entered under your name.</p>
       </div>
 
       {/* The menu */}

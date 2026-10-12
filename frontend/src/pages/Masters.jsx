@@ -505,9 +505,17 @@ function LinesPanel() {
   );
 }
 
+// The free Atlas plan's limit, for everything stored together.
+const DB_LIMIT_MB = 512;
+
 function BackupPanel() {
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState(null);
+  const [photos, setPhotos] = useState(null);
+
+  useEffect(() => {
+    api.photosUsage().then(setPhotos).catch(() => {});
+  }, []);
 
   const download = async () => {
     setBusy(true);
@@ -565,6 +573,14 @@ function BackupPanel() {
             </span>
           )}
         </div>
+        {photos && (
+          // Photos are by far the largest thing stored, and they are not in the
+          // backup file - both worth knowing before the database fills up.
+          <p className="text-xs text-muted-foreground" data-testid="photos-usage">
+            Order form photos: {photos.count} taking {(photos.bytes / 1048576).toFixed(1)} MB of the {DB_LIMIT_MB} MB free database.
+            They are not in the backup file - it would be too large to download.
+          </p>
+        )}
 
         <p className="text-xs text-muted-foreground">
           To restore one, double-click <span className="font-mono text-foreground">restore-backup.bat</span> in the project folder

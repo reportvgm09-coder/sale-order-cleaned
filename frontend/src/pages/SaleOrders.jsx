@@ -15,6 +15,7 @@ import { ORDER_STATES, stateFromLabel, stateLabel, stateRowClass } from "@/lib/o
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import FastOrderEntry from "@/components/FastOrderEntry";
+import { OrderPhotos, PhotosButton, uploadPending } from "@/components/OrderPhotos";
 import { ExportDialog } from "@/components/ExportDialog";
 import { toast } from "sonner";
 import { Plus, Trash2, Pencil, X, FileSpreadsheet, Upload, Download, ScrollText, Zap } from "lucide-react";
@@ -40,6 +41,8 @@ export default function SaleOrders() {
   const [masters, setMasters] = useState({ customers: [], brands: [], exhibitions: [], salesmen: [], seasons: [], lines: [] });
   const [draft, setDraft] = useState(blankDraft());
   const [editing, setEditing] = useState(null);
+  // photos for an order not saved yet - uploaded once it is
+  const [pendingPhotos, setPendingPhotos] = useState([]);
   const [filter, setFilter] = useState({ customer: "all", status: "all" });
   const [selected, setSelected] = useState([]);
   const [showNewCust, setShowNewCust] = useState(false);
@@ -137,6 +140,7 @@ export default function SaleOrders() {
   const resetForm = () => {
     setDraft(blankDraft());
     setEditing(null);
+    setPendingPhotos([]);
   };
 
   const submit = async () => {
@@ -165,7 +169,9 @@ export default function SaleOrders() {
         toast.success("Sale order updated");
       } else {
         await api.createSaleOrder(payload);
+        const failed = await uploadPending(payload.id, pendingPhotos);
         toast.success("Sale order saved");
+        if (failed) toast.error(`${failed} photo${failed === 1 ? "" : "s"} did not upload - edit the order and attach ${failed === 1 ? "it" : "them"} again`);
       }
       resetForm();
       load();
@@ -530,6 +536,12 @@ export default function SaleOrders() {
           </div>
         </div>
 
+        <div className="mt-5 space-y-2">
+          <Label className="text-xs uppercase tracking-widest">Photo of the order form</Label>
+          <OrderPhotos orderId={editing} pending={pendingPhotos} setPending={setPendingPhotos} canChange testid="so-photos" />
+          {editing && <p className="text-xs text-muted-foreground">Photos are saved as soon as you add or remove them.</p>}
+        </div>
+
         <div className="mt-4">
           <Button data-testid="save-so-btn" onClick={submit} className="rounded-sm">
             {editing ? "Save Changes" : "Save Sale Order"}
@@ -682,7 +694,10 @@ export default function SaleOrders() {
                   <TableCell>
                     <Checkbox data-testid={`so-select-${o.id}`} checked={selected.includes(o.id)} onCheckedChange={() => toggleSel(o.id)} />
                   </TableCell>
-                  <TableCell className="font-mono font-semibold">{o.id}</TableCell>
+                  <TableCell className="font-mono font-semibold">
+                    {o.id}
+                    <PhotosButton order={o} canChange={canEdit} />
+                  </TableCell>
                   <TableCell>{nameOf("customers", o.customer_id)}{cityOf(o.customer_id) ? <span className="ml-1 text-xs text-muted-foreground">· {cityOf(o.customer_id)}</span> : null}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(o.totals.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.totals.pending_qty)}</TableCell>

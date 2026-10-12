@@ -69,6 +69,13 @@ export const api = {
   // edit and dispatch dialogs from any page.
   saleOrder: (id) => client.get(`/sale-orders/${id}`).then((r) => r.data),
   createSaleOrder: (payload) => client.post(`/sale-orders`, payload).then((r) => r.data),
+  // photos of the paper order form. Images come as blobs: an <img src> cannot
+  // send the sign-in header, so they are fetched and shown from memory.
+  listOrderPhotos: (orderId) => client.get(`/sale-orders/${orderId}/photos`).then((r) => r.data),
+  addOrderPhoto: (orderId, data) => client.post(`/sale-orders/${orderId}/photos`, { data }).then((r) => r.data),
+  photoBlob: (photoId) => client.get(`/photos/${photoId}`, { responseType: "blob" }).then((r) => r.data),
+  deletePhoto: (photoId) => client.delete(`/photos/${photoId}`).then((r) => r.data),
+  photosUsage: () => client.get(`/photos-usage`).then((r) => r.data),
   updateSaleOrder: (id, payload) => client.put(`/sale-orders/${id}`, payload).then((r) => r.data),
   deleteSaleOrder: (id) => client.delete(`/sale-orders/${id}`).then((r) => r.data),
   bulkDeleteSaleOrders: (ids) => client.post(`/sale-orders/bulk-delete`, { ids }).then((r) => r.data),
