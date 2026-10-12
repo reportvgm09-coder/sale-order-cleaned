@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Loader } from "@/components/Loader";
+import { useAuth } from "@/context/Auth";
 import { toast } from "sonner";
 import { Table as TableIcon, FileSpreadsheet, FilterX, Filter, ArrowUp, ArrowDown, Columns3 } from "lucide-react";
 
@@ -280,6 +281,10 @@ export default function Orders() {
   const [hidden, setHidden] = useState(loadHidden);
   const [sort, setSort] = useState({ key: "order_date", dir: "desc" });
   const [exportOpen, setExportOpen] = useState(false);
+  const { seesMoney } = useAuth();
+  // Value columns only exist for logins that see money - the server sends
+  // nothing to fill them with otherwise.
+  const columns = useMemo(() => (seesMoney ? COLUMNS : COLUMNS.filter((c) => !c.money)), [seesMoney]);
   const navigate = useNavigate();
 
   const tableRef = useRef(null);
@@ -358,11 +363,11 @@ export default function Orders() {
     }
   }, [hidden]);
 
-  const visible = useMemo(() => COLUMNS.filter((c) => !hidden.includes(c.key)), [hidden]);
+  const visible = useMemo(() => columns.filter((c) => !hidden.includes(c.key)), [columns, hidden]);
 
   const filtered = useMemo(
-    () => rows.filter((r) => COLUMNS.every((c) => !c.filter || matches(c, r, filters[c.key]))),
-    [rows, filters]
+    () => rows.filter((r) => columns.every((c) => !c.filter || matches(c, r, filters[c.key]))),
+    [columns, rows, filters]
   );
 
   // A column's own choices are built from the rows the OTHER filters leave
@@ -372,17 +377,17 @@ export default function Orders() {
     visible
       .filter((c) => c.filter === "list")
       .forEach((col) => {
-        const others = rows.filter((r) => COLUMNS.every((c) => c.key === col.key || !c.filter || matches(c, r, filters[c.key])));
+        const others = rows.filter((r) => columns.every((c) => c.key === col.key || !c.filter || matches(c, r, filters[c.key])));
         const seen = new Set(others.map((r) => r[col.key]).filter(Boolean));
         // Keep anything already ticked on the list, or it would vanish mid-use.
         (filters[col.key] || []).forEach((v) => seen.add(v));
         out[col.key] = Array.from(seen).sort();
       });
     return out;
-  }, [rows, filters, visible]);
+  }, [columns, rows, filters, visible]);
 
   const sorted = useMemo(() => {
-    const col = COLUMNS.find((c) => c.key === sort.key);
+    const col = columns.find((c) => c.key === sort.key);
     if (!col) return filtered;
     const numeric = col.filter === "num";
     const factor = sort.dir === "asc" ? 1 : -1;
@@ -392,15 +397,15 @@ export default function Orders() {
       if (numeric) return ((Number(x) || 0) - (Number(y) || 0)) * factor;
       return String(x ?? "").localeCompare(String(y ?? ""), "en") * factor;
     });
-  }, [filtered, sort]);
+  }, [columns, filtered, sort]);
 
   const totals = useMemo(
     () =>
       sorted.reduce((a, r) => {
-        COLUMNS.filter((c) => c.total).forEach((c) => (a[c.key] = (a[c.key] || 0) + (Number(r[c.key]) || 0)));
+        columns.filter((c) => c.total).forEach((c) => (a[c.key] = (a[c.key] || 0) + (Number(r[c.key]) || 0)));
         return a;
       }, {}),
-    [sorted]
+    [columns, sorted]
   );
 
   // The scrollbar above the grid. The Table component wraps its <table> in the
@@ -433,7 +438,7 @@ export default function Orders() {
     if (pane) pane.scrollLeft = e.currentTarget.scrollLeft;
   };
 
-  const activeCount = COLUMNS.filter((c) => c.filter && isSet(c, filters[c.key])).length;
+  const activeCount = columns.filter((c) => c.filter && isSet(c, filters[c.key])).length;
   const setFilter = (key, value) => setFilters((p) => ({ ...p, [key]: value }));
   const clearAll = () => setFilters(blankFilters());
 
@@ -442,7 +447,7 @@ export default function Orders() {
   const toggleColumn = (key) => {
     const hiding = !hidden.includes(key);
     setHidden((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
-    const col = COLUMNS.find((c) => c.key === key);
+    const col = columns.find((c) => c.key === key);
     if (hiding && col?.filter) setFilter(key, EMPTY[col.filter]);
   };
 
@@ -455,7 +460,7 @@ export default function Orders() {
       data: sorted,
       // Every column is offered, including any hidden on screen - the export
       // dialog has its own tick list and remembers it separately.
-      columns: COLUMNS.map((c) => ({
+      columns: columns.map((c) => ({
         key: c.label,
         // Real dates and raw numbers, so the spreadsheet can sort, filter and
         // total them rather than treating the column as text.
@@ -487,7 +492,7 @@ export default function Orders() {
               <Button data-testid="orders-columns-btn" variant="outline" size="sm" className="h-9 gap-2 rounded-sm">
                 <Columns3 className="h-4 w-4" /> Columns
                 <span className="tabular-nums text-muted-foreground">
-                  {visible.length}/{COLUMNS.length}
+                  {visible.length}/{columns.length}
                 </span>
               </Button>
             </PopoverTrigger>
@@ -505,7 +510,7 @@ export default function Orders() {
                 </button>
               </div>
               <div className="max-h-72 overflow-y-auto p-1">
-                {COLUMNS.map((c) => {
+                {columns.map((c) => {
                   const on = !hidden.includes(c.key);
                   return (
                     <label
@@ -549,7 +554,7 @@ export default function Orders() {
           { l: "Ordered", v: num(totals.ordered || 0), t: "ordered" },
           { l: "Dispatched", v: num(totals.dispatched || 0), t: "dispatched" },
           { l: "Pending", v: num(totals.pending || 0), t: "pending" },
-          { l: "Order Value", v: inr(totals.amount || 0), t: "amount" },
+          ...(seesMoney ? [{ l: "Order Value", v: inr(totals.amount || 0), t: "amount" }] : []),
         ].map((s) => (
           <Card key={s.t} data-testid={`orders-sum-${s.t}`} className="rounded-sm border-border px-3 py-2 shadow-none">
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{s.l}</div>

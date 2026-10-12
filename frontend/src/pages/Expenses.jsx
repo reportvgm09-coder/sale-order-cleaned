@@ -35,7 +35,7 @@ const blankDraft = () => ({
 const Stat = ({ label, value, sub, testid, tone }) => (
   <Card data-testid={testid} className="rounded-sm border-2 border-border p-4 shadow-none">
     <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{label}</div>
-    <div className={`mt-1 font-display text-2xl font-extrabold tabular-nums ${tone || ""}`}>{value}</div>
+    <div className={`mt-1 break-words font-display text-xl font-extrabold tabular-nums sm:text-2xl ${tone || ""}`}>{value}</div>
     {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
   </Card>
 );
@@ -402,7 +402,7 @@ export default function Expenses() {
 
         {/* Head lines */}
         <div className="mt-5 rounded-sm border border-border">
-          <div className="grid grid-cols-[minmax(140px,1fr)_130px_minmax(160px,1.4fr)_40px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          <div className="hidden grid-cols-[minmax(140px,1fr)_130px_minmax(160px,1.4fr)_40px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground md:grid">
             <div>Head</div><div className="text-right">Amount</div><div>Note</div><div />
           </div>
           {heads.length === 0 ? (
@@ -411,7 +411,8 @@ export default function Expenses() {
             </div>
           ) : (
             draft.items.map((it, idx) => (
-              <div key={it.key} className="grid grid-cols-[minmax(140px,1fr)_130px_minmax(160px,1.4fr)_40px] items-center gap-2 px-3 py-2" data-testid={`expense-line-${idx}`}>
+              // head and amount side by side on a phone, the note on a line of its own
+              <div key={it.key} className="grid grid-cols-[1fr_110px_auto] items-center gap-2 border-b border-border/60 px-3 py-2 md:grid-cols-[minmax(140px,1fr)_130px_minmax(160px,1.4fr)_40px] md:border-0" data-testid={`expense-line-${idx}`}>
                 <Select value={it.head_id} onValueChange={(v) => setItem(it.key, { head_id: v })}>
                   <SelectTrigger data-testid={`expense-head-${idx}`} className="h-9 rounded-sm"><SelectValue placeholder="Head" /></SelectTrigger>
                   <SelectContent>
@@ -432,10 +433,10 @@ export default function Expenses() {
                   data-testid={`expense-note-${idx}`}
                   value={it.note}
                   onChange={(e) => setItem(it.key, { note: e.target.value })}
-                  className="h-9 rounded-sm"
-                  placeholder="optional"
+                  className="col-span-3 row-start-2 h-9 rounded-sm md:col-span-1 md:row-start-auto"
+                  placeholder="Note (optional)"
                 />
-                <Button variant="ghost" size="icon" onClick={() => removeLine(it.key)} className="h-8 w-8 text-destructive" data-testid={`expense-remove-${idx}`}>
+                <Button variant="ghost" size="icon" onClick={() => removeLine(it.key)} className="col-start-3 row-start-1 h-8 w-8 text-destructive md:col-start-auto md:row-start-auto" data-testid={`expense-remove-${idx}`}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -470,7 +471,7 @@ export default function Expenses() {
 
       {/* Filters */}
       <Card className="rounded-sm border-border p-4 shadow-none" data-testid="expense-filters">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           <div>
             <Label className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">From</Label>
             <Input data-testid="expense-range-start" type="date" value={f.start} onChange={(e) => applyF({ start: e.target.value })} className="mt-1 h-9 rounded-sm" />
@@ -546,7 +547,7 @@ export default function Expenses() {
                 applyF({ group: v });
               }}
             >
-              <SelectTrigger data-testid="expense-group" className="mt-1 h-9 w-64 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="expense-group" className="mt-1 h-9 w-full rounded-sm border-2 sm:w-64"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="target">One row per salesman</SelectItem>
                 <SelectItem value="line">Split by line — one row per trip</SelectItem>
@@ -556,7 +557,7 @@ export default function Expenses() {
           <div>
             <Label className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Compare cost against</Label>
             <Select value={f.basis} onValueChange={(v) => applyF({ basis: v })}>
-              <SelectTrigger data-testid="expense-basis" className="mt-1 h-9 w-64 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="expense-basis" className="mt-1 h-9 w-full rounded-sm border-2 sm:w-64"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="order">Order value — everything ordered</SelectItem>
                 <SelectItem value="dispatch">Dispatched value — only what shipped</SelectItem>

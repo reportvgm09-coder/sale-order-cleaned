@@ -28,7 +28,10 @@ export default function DispatchOrders() {
   const [amtMap, setAmtMap] = useState({});
   const [selRows, setSelRows] = useState([]);
   const [exportOpen, setExportOpen] = useState(false);
-  const { requireUnlock } = useAuth();
+  const { requireUnlock, seesMoney } = useAuth();
+  // The dispatch form's columns from tablet width up - the amount one only for
+  // logins that see money. A phone stacks each brand instead (see the rows).
+  const formCols = seesMoney ? "md:grid-cols-[1fr_90px_110px_90px_120px_150px]" : "md:grid-cols-[1fr_90px_110px_90px_120px]";
 
   const toggleSel = (id) => setSelRows((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const bulkDelete = () =>
@@ -174,7 +177,7 @@ export default function DispatchOrders() {
         { key: "Date", get: (x) => xlDate(x.d.dispatch_date) },
         { key: "Brand", get: (x) => brandName(x.it.brand_id) },
         { key: "Qty", get: (x) => x.it.qty },
-        { key: "Actual Amount", get: (x) => (x.it.amount == null ? "" : x.it.amount) },
+        { key: "Actual Amount", get: (x) => (x.it.amount == null ? "" : x.it.amount), money: true },
       ],
     },
   ];
@@ -246,20 +249,25 @@ export default function DispatchOrders() {
 
         {order && (
           <div className="mt-5 rounded-sm border border-border">
-            <div className="grid grid-cols-[1fr_90px_110px_90px_120px_150px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              <div>Brand</div><div className="text-right">Ordered</div><div className="text-right">Dispatched</div><div className="text-right">Pending</div><div className="text-right">Dispatch Now</div><div className="text-right">Actual Amount ₹</div>
+            <div className={`hidden ${formCols} gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground md:grid`}>
+              <div>Brand</div><div className="text-right">Ordered</div><div className="text-right">Dispatched</div><div className="text-right">Pending</div><div className="text-right">Dispatch Now</div>{seesMoney && <div className="text-right">Actual Amount ₹</div>}
             </div>
             {rows.map((r) => {
               const q = Number(qtyMap[r.brand_id]) || 0;
               const suggested = q * (r.rate || 0);
               const typed = String(amtMap[r.brand_id] ?? "").trim();
               return (
-                <div key={r.brand_id} className="grid grid-cols-[1fr_90px_110px_90px_120px_150px] items-center gap-2 px-3 py-2" data-testid={`dispatch-item-${r.brand_id}`}>
-                  <div className="font-medium">{brandName(r.brand_id)}</div>
-                  <div className="text-right tabular-nums">{num(r.ordered)}</div>
-                  <div className="text-right tabular-nums text-muted-foreground">{num(r.dispatched)}</div>
-                  <div className="text-right tabular-nums font-semibold text-amber-700">{num(r.pending)}</div>
-                  <div className="flex justify-end">
+                <div key={r.brand_id} className={`grid grid-cols-2 items-start gap-2 border-b border-border/60 px-3 py-2 ${formCols} md:items-center md:border-0`} data-testid={`dispatch-item-${r.brand_id}`}>
+                  <div className="col-span-2 font-medium md:col-span-1">
+                    {brandName(r.brand_id)}
+                    <div className="text-xs font-normal text-muted-foreground md:hidden">
+                      Ordered {num(r.ordered)} · Sent {num(r.dispatched)} · <span className="font-semibold text-amber-700">Pending {num(r.pending)}</span>
+                    </div>
+                  </div>
+                  <div className="hidden text-right tabular-nums md:block">{num(r.ordered)}</div>
+                  <div className="hidden text-right tabular-nums text-muted-foreground md:block">{num(r.dispatched)}</div>
+                  <div className="hidden text-right tabular-nums font-semibold text-amber-700 md:block">{num(r.pending)}</div>
+                  <div className={`flex md:justify-end ${seesMoney ? "" : "col-span-2 md:col-span-1"}`}>
                     <Input
                       data-testid={`dispatch-qty-${r.brand_id}`}
                       type="number"
@@ -268,11 +276,12 @@ export default function DispatchOrders() {
                       disabled={r.pending === 0}
                       value={qtyMap[r.brand_id] || ""}
                       onChange={(e) => setQtyMap({ ...qtyMap, [r.brand_id]: e.target.value })}
-                      className="w-24 rounded-sm text-right"
-                      placeholder="0"
+                      inputMode="numeric"
+                      className="w-full rounded-sm text-right md:w-24"
+                      placeholder="Pcs now"
                     />
                   </div>
-                  <div className="flex flex-col items-end">
+                  {seesMoney && <div className="flex flex-col items-stretch md:items-end">
                     <Input
                       data-testid={`dispatch-amount-${r.brand_id}`}
                       type="number"
@@ -280,15 +289,16 @@ export default function DispatchOrders() {
                       disabled={r.pending === 0}
                       value={amtMap[r.brand_id] ?? ""}
                       onChange={(e) => setAmtMap({ ...amtMap, [r.brand_id]: e.target.value })}
-                      className="w-32 rounded-sm text-right"
-                      placeholder={q > 0 ? String(Math.round(suggested)) : "optional"}
+                      inputMode="decimal"
+                      className="w-full rounded-sm text-right md:w-32"
+                      placeholder={q > 0 ? String(Math.round(suggested)) : "₹ optional"}
                     />
                     {q > 0 && (
                       <span className="mt-0.5 text-[10px] text-muted-foreground">
                         {typed === "" ? `${inr(suggested)} at order rate` : `${inr((Number(typed) || 0) / q)} each`}
                       </span>
                     )}
-                  </div>
+                  </div>}
                 </div>
               );
             })}
@@ -349,11 +359,13 @@ export default function DispatchOrders() {
                     <TableCell className="text-muted-foreground">{fmtDate(d.dispatch_date)}</TableCell>
                     <TableCell className="text-sm">
                       {(d.items || []).map((it) => `${brandName(it.brand_id)} × ${num(it.qty)}`).join(", ")}
-                      <div className="text-xs text-muted-foreground">
-                        {d.total_amount == null
-                          ? "valued at order rates"
-                          : `${inr(d.total_amount)}${d.fully_priced ? "" : " (part actual)"}`}
-                      </div>
+                      {seesMoney && (
+                        <div className="text-xs text-muted-foreground">
+                          {d.total_amount == null
+                            ? "valued at order rates"
+                            : `${inr(d.total_amount)}${d.fully_priced ? "" : " (part actual)"}`}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums font-semibold">{num(totalPcs)}</TableCell>
                     <TableCell className="text-right">

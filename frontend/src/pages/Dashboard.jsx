@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader } from "@/components/Loader";
+import { useAuth } from "@/context/Auth";
 import { toast } from "sonner";
 import { FileSpreadsheet, Package, ShoppingCart, Boxes, IndianRupee, Inbox, AlertTriangle, FilterX, RefreshCw } from "lucide-react";
 
@@ -85,6 +86,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const { seesMoney } = useAuth();
   const [masters, setMasters] = useState({ customers: [], brands: [], seasons: [] });
   const [filters, setFilters] = useState({ customer_id: "all", brand_id: "all", season_id: "all", event_type: "all", city: "all", overdue_only: false });
 
@@ -145,7 +147,7 @@ export default function Dashboard() {
         { key: "Ordered", get: (o) => o.ordered_qty },
         { key: "Dispatched", get: (o) => o.dispatched_qty },
         { key: "Pending", get: (o) => o.pending_qty },
-        { key: "Amount", get: (o) => o.amount },
+        { key: "Amount", get: (o) => o.amount, money: true },
         { key: "Status", get: (o) => o.status },
         { key: "Overdue", get: (o) => (o.overdue ? "Yes" : "No") },
       ],
@@ -271,11 +273,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${seesMoney ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
         <StatCard testid="stat-total-orders" label="Total Sale Orders" value={num(data.total_orders)} icon={ShoppingCart} accent="bg-accent text-primary" />
         <StatCard testid="stat-pending-orders" label="Orders With Pending Qty" value={num(data.orders_with_pending)} icon={Package} accent="bg-amber-100 text-amber-700" />
         <StatCard testid="stat-pending-pieces" label="Pending Pieces" value={num(data.pending_pieces)} icon={Boxes} accent="bg-blue-100 text-blue-700" />
-        <StatCard testid="stat-pending-value" label="Pending Value (est.)" value={inr(data.pending_value)} icon={IndianRupee} accent="bg-emerald-100 text-emerald-700" />
+        {seesMoney && <StatCard testid="stat-pending-value" label="Pending Value (est.)" value={inr(data.pending_value)} icon={IndianRupee} accent="bg-emerald-100 text-emerald-700" />}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -300,7 +302,7 @@ export default function Dashboard() {
                 <TableHead className="text-xs uppercase tracking-widest">Dispatch By</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Ordered</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Pending</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>}
                 <TableHead className="text-xs uppercase tracking-widest">Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -321,7 +323,7 @@ export default function Dashboard() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{num(o.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.pending_qty)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(o.amount)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums">{inr(o.amount)}</TableCell>}
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-1">
                       <StatusBadge status={o.status} />
@@ -334,7 +336,7 @@ export default function Dashboard() {
                 <TableCell colSpan={3}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(openTotals.ordered)}</TableCell>
                 <TableCell className="text-right tabular-nums text-amber-700">{num(openTotals.pending)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(openTotals.amount)}</TableCell>
+                {seesMoney && <TableCell className="text-right tabular-nums">{inr(openTotals.amount)}</TableCell>}
                 <TableCell />
               </TableRow>
             </TableBody>

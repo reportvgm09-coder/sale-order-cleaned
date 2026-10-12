@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { addMasterConfirmed } from "@/lib/masters";
+import { useAuth } from "@/context/Auth";
 import { readWorkbookRows, downloadSheet, sheetDate } from "@/lib/excel";
 import { inr, today, fmtDate } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,7 +21,10 @@ const LISTS = [
   { type: "expense_heads", label: "Expense Heads", icon: Wallet },
 ];
 
-function MasterPanel({ type, label, icon: Icon, hasCity, hasRate }) {
+function MasterPanel({ type, label, icon: Icon, hasCity, hasRate: rateField }) {
+  // a brand's rate is money, so only logins that see money get the field
+  const { seesMoney } = useAuth();
+  const hasRate = rateField && seesMoney;
   const [items, setItems] = useState([]);
   const [name, setName] = useState("");
   const [extra, setExtra] = useState("");

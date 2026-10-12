@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { addMasterConfirmed } from "@/lib/masters";
 import { useAuth } from "@/context/Auth";
-import { inr, num, today, fmtDate } from "@/lib/format";
+import { num, today, fmtDate } from "@/lib/format";
 import { MasterPicker, genOrderId } from "@/components/FastOrderEntry";
 import { StatusBadge, StateBadge } from "@/components/StatusBadge";
 import { Loader } from "@/components/Loader";
@@ -18,7 +18,7 @@ import { Plus, X, Save, Pencil, Trash2, ScrollText } from "lucide-react";
 const NONE = "__none__";
 
 let itemKey = 0;
-const blankItem = () => ({ key: `it-${++itemKey}`, brand_id: "", rate: "", qty: "" });
+const blankItem = () => ({ key: `it-${++itemKey}`, brand_id: "", qty: "" });
 
 // The salesman's own app: enter an order, see the orders he has entered.
 // Everything about which salesman it is gets decided by the server from his
@@ -72,20 +72,12 @@ export default function MyOrders() {
   const nameOf = (list, id) => masters[list].find((m) => m.id === id)?.name || "—";
 
   const setItem = (key, patch) => setDraft((d) => ({ ...d, items: d.items.map((it) => (it.key === key ? { ...it, ...patch } : it)) }));
-  const pickBrand = (key, brand) =>
-    setDraft((d) => ({
-      ...d,
-      items: d.items.map((it) => {
-        if (it.key !== key) return it;
-        const rateEmpty = it.rate === "" || it.rate == null || Number(it.rate) === 0;
-        return { ...it, brand_id: brand.id, rate: rateEmpty && brand.rate ? brand.rate : it.rate };
-      }),
-    }));
+  const pickBrand = (key, brand) => setItem(key, { brand_id: brand.id });
   const addItem = () => setDraft((d) => ({ ...d, items: [...d.items, blankItem()] }));
   const removeItem = (key) =>
     setDraft((d) => ({ ...d, items: d.items.length === 1 ? [blankItem()] : d.items.filter((it) => it.key !== key) }));
 
-  const total = draft.items.reduce((s, it) => s + (Number(it.rate) || 0) * (Number(it.qty) || 0), 0);
+  const totalPcs = draft.items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
 
   // Where and when stay as they were, so the next order from the same street
   // or the same stall is only a customer and a few brands away.
@@ -99,7 +91,9 @@ export default function MyOrders() {
     if (draft.event_type === "exhibition" && !draft.exhibition_id) return toast.error("Pick the exhibition");
     const items = draft.items
       .filter((it) => it.brand_id && Number(it.qty) > 0)
-      .map((it) => ({ brand_id: it.brand_id, rate: Number(it.rate) || 0, qty: Number(it.qty) || 0 }));
+      // No rate: a salesman never sees prices, and the server sets each one
+      // from the brand (or keeps what the office already gave it).
+      .map((it) => ({ brand_id: it.brand_id, qty: Number(it.qty) || 0 }));
     if (items.length === 0) return toast.error("Add at least one brand with a quantity");
     const door = draft.event_type === "door_to_door";
     const payload = {
@@ -121,7 +115,7 @@ export default function MyOrders() {
         toast.success(`Order ${draft.id} updated`);
       } else {
         await api.createSaleOrder(payload);
-        toast.success(`Order ${draft.id} saved - ${inr(total)}`);
+        toast.success(`Order ${draft.id} saved - ${num(totalPcs)} pcs`);
       }
       nextOrder();
       load();
@@ -142,7 +136,7 @@ export default function MyOrders() {
       exhibition_id: o.exhibition_id || "",
       line_id: o.line_id || "",
       season_id: o.season_id || NONE,
-      items: (o.items || []).map((it) => ({ key: `it-${++itemKey}`, brand_id: it.brand_id, rate: it.rate, qty: it.qty })),
+      items: (o.items || []).map((it) => ({ key: `it-${++itemKey}`, brand_id: it.brand_id, qty: it.qty })),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -290,7 +284,7 @@ export default function MyOrders() {
         <div className="mt-5 space-y-2">
           <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Brands</div>
           {draft.items.map((it, idx) => (
-            <div key={it.key} className="grid grid-cols-[1fr_auto] gap-2 rounded-sm border border-border p-2 sm:grid-cols-[minmax(160px,2fr)_110px_110px_120px_40px] sm:items-center" data-testid={`my-order-item-${idx}`}>
+            <div key={it.key} className="grid grid-cols-[1fr_96px_auto] items-center gap-2 rounded-sm border border-border p-2 sm:grid-cols-[minmax(160px,1fr)_140px_40px]" data-testid={`my-order-item-${idx}`}>
               <div className="min-w-0">
                 <MasterPicker
                   testid={`my-order-brand-${idx}`}
@@ -301,32 +295,17 @@ export default function MyOrders() {
                   addLabel="brand"
                 />
               </div>
-              <div className="col-span-2 grid grid-cols-[1fr_1fr_auto] gap-2 sm:contents">
-                <Input
-                  data-testid={`my-order-qty-${idx}`}
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  placeholder="Pieces"
-                  value={it.qty}
-                  onChange={(e) => setItem(it.key, { qty: e.target.value })}
-                  className="h-9 rounded-sm text-right"
-                />
-                <Input
-                  data-testid={`my-order-rate-${idx}`}
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  placeholder="Rate"
-                  value={it.rate}
-                  onChange={(e) => setItem(it.key, { rate: e.target.value })}
-                  className="h-9 rounded-sm text-right"
-                />
-                <div className="flex items-center justify-end text-sm tabular-nums text-muted-foreground sm:pr-1">
-                  {inr((Number(it.rate) || 0) * (Number(it.qty) || 0))}
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => removeItem(it.key)} className="col-start-2 row-start-1 h-8 w-8 text-destructive sm:col-start-auto sm:row-start-auto" data-testid={`my-order-remove-${idx}`} title="Remove">
+              <Input
+                data-testid={`my-order-qty-${idx}`}
+                type="number"
+                inputMode="numeric"
+                min="0"
+                placeholder="Pieces"
+                value={it.qty}
+                onChange={(e) => setItem(it.key, { qty: e.target.value })}
+                className="h-9 rounded-sm text-right"
+              />
+              <Button variant="ghost" size="icon" onClick={() => removeItem(it.key)} className="h-8 w-8 text-destructive" data-testid={`my-order-remove-${idx}`} title="Remove">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -336,7 +315,7 @@ export default function MyOrders() {
               <Plus className="h-4 w-4" /> Add brand
             </Button>
             <div className="text-sm">
-              Total: <span className="font-display text-lg font-bold tabular-nums" data-testid="my-order-total">{inr(total)}</span>
+              Total: <span className="font-display text-lg font-bold tabular-nums" data-testid="my-order-total">{num(totalPcs)} pcs</span>
             </div>
           </div>
         </div>
@@ -377,7 +356,7 @@ export default function MyOrders() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="font-semibold tabular-nums">{inr(t.amount)}</div>
+                    <div className="font-semibold tabular-nums">{num(t.ordered_qty)} pcs</div>
                     <div className="text-xs text-muted-foreground">
                       {num(t.dispatched_qty)} of {num(t.ordered_qty)} sent
                     </div>

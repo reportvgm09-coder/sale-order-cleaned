@@ -47,7 +47,9 @@ export default function SaleOrders() {
   const [importPreview, setImportPreview] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [mode, setMode] = useState("single"); // "single" = one order at a time, "fast" = grid pad
-  const { requireUnlock } = useAuth();
+  // A viewer can neither save an order nor see a rate, so the entry side of
+  // this page - which is built on rates - is not shown to one at all.
+  const { requireUnlock, seesMoney, canEdit } = useAuth();
 
   // Shared by both entry modes so a master list only ever updates in one place.
   // The key in `masters` is the master type itself, so this covers all of them.
@@ -217,9 +219,9 @@ export default function SaleOrders() {
         { key: "Line", get: (x) => nameOf("lines", x.o.line_id) },
         { key: "Season", get: (x) => nameOf("seasons", x.o.season_id) },
         { key: "Brand", get: (x) => nameOf("brands", x.it.brand_id) },
-        { key: "Rate", get: (x) => x.it.rate },
+        { key: "Rate", get: (x) => x.it.rate, money: true },
         { key: "Qty", get: (x) => x.it.qty },
-        { key: "Amount", get: (x) => (Number(x.it.rate) || 0) * (Number(x.it.qty) || 0) },
+        { key: "Amount", get: (x) => (Number(x.it.rate) || 0) * (Number(x.it.qty) || 0), money: true },
         { key: "Status", get: (x) => x.o.totals.status },
         { key: "State", get: (x) => stateLabel(x.o.state) },
       ],
@@ -234,7 +236,7 @@ export default function SaleOrders() {
         { key: "Ordered", get: (o) => o.totals.ordered_qty },
         { key: "Dispatched", get: (o) => o.totals.dispatched_qty },
         { key: "Pending", get: (o) => o.totals.pending_qty },
-        { key: "Amount", get: (o) => o.totals.amount },
+        { key: "Amount", get: (o) => o.totals.amount, money: true },
         { key: "Status", get: (o) => o.totals.status },
       ],
     },
@@ -356,7 +358,7 @@ export default function SaleOrders() {
           <h1 className="font-display text-3xl font-extrabold tracking-tight">Sale Orders</h1>
           <p className="text-sm text-muted-foreground">Create orders, add line items and track fulfilment.</p>
         </div>
-        <div className="flex items-center gap-1 rounded-sm border-2 border-border p-1" data-testid="so-mode-toggle">
+        {canEdit && <div className="flex items-center gap-1 rounded-sm border-2 border-border p-1" data-testid="so-mode-toggle">
           <Button
             data-testid="so-mode-single"
             variant={mode === "single" ? "default" : "ghost"}
@@ -375,15 +377,15 @@ export default function SaleOrders() {
           >
             <Zap className="h-4 w-4" /> Fast Entry
           </Button>
-        </div>
+        </div>}
       </div>
 
-      {mode === "fast" && (
+      {canEdit && mode === "fast" && (
         <FastOrderEntry masters={masters} onSaved={load} onCreateMaster={createMaster} />
       )}
 
       {/* Form */}
-      {mode === "single" && (
+      {canEdit && mode === "single" && (
       <Card className="rounded-sm border-border p-5 shadow-none">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-display text-lg font-bold tracking-tight">{editing ? `Edit Order ${editing}` : "New Sale Order"}</h2>
@@ -499,21 +501,23 @@ export default function SaleOrders() {
 
         {/* Line items */}
         <div className="mt-6 rounded-sm border border-border">
-          <div className="grid grid-cols-[1fr_120px_120px_140px_40px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <div className="hidden grid-cols-[1fr_120px_120px_140px_40px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground md:grid">
             <div>Brand</div><div>Rate (₹)</div><div>Qty</div><div className="text-right">Amount</div><div />
           </div>
           {draft.items.map((it, idx) => (
-            <div key={it.id} className="grid grid-cols-[1fr_120px_120px_140px_40px] items-center gap-2 px-3 py-2" data-testid={`item-row-${idx}`}>
+            // On a phone each line is a small card - brand across the top, then
+            // rate, qty and amount - since five columns will not fit across.
+            <div key={it.id} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 border-b border-border/60 px-3 py-2 md:grid-cols-[1fr_120px_120px_140px_40px] md:border-0" data-testid={`item-row-${idx}`}>
               <Select value={it.brand_id} onValueChange={(v) => selectBrand(idx, v)}>
-                <SelectTrigger data-testid={`item-brand-${idx}`} className="rounded-sm"><SelectValue placeholder="Brand" /></SelectTrigger>
+                <SelectTrigger data-testid={`item-brand-${idx}`} className="col-span-2 rounded-sm md:col-span-1"><SelectValue placeholder="Brand" /></SelectTrigger>
                 <SelectContent>
                   {masters.brands.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}{b.rate ? ` · ₹${b.rate}` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Input data-testid={`item-rate-${idx}`} type="number" value={it.rate} onChange={(e) => setItem(idx, "rate", e.target.value)} className="rounded-sm" />
-              <Input data-testid={`item-qty-${idx}`} type="number" value={it.qty} onChange={(e) => setItem(idx, "qty", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } }} className="rounded-sm" />
+              <Input data-testid={`item-rate-${idx}`} type="number" inputMode="decimal" placeholder="Rate ₹" value={it.rate} onChange={(e) => setItem(idx, "rate", e.target.value)} className="rounded-sm" />
+              <Input data-testid={`item-qty-${idx}`} type="number" inputMode="numeric" placeholder="Qty" value={it.qty} onChange={(e) => setItem(idx, "qty", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } }} className="rounded-sm" />
               <div className="text-right tabular-nums font-medium">{inr((Number(it.rate) || 0) * (Number(it.qty) || 0))}</div>
-              <Button data-testid={`item-remove-${idx}`} variant="ghost" size="icon" onClick={() => removeItem(idx)} className="h-8 w-8 text-destructive">
+              <Button data-testid={`item-remove-${idx}`} variant="ghost" size="icon" onClick={() => removeItem(idx)} className="col-start-3 row-start-1 h-8 w-8 text-destructive md:col-start-auto md:row-start-auto">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -594,7 +598,7 @@ export default function SaleOrders() {
 
 
       {/* Import */}
-      <Card className="rounded-sm border-border p-4 shadow-none">
+      {canEdit && <Card className="rounded-sm border-border p-4 shadow-none">
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium">Import from Excel:</span>
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-sm border border-input px-3 py-1.5 text-sm hover:bg-secondary">
@@ -606,7 +610,7 @@ export default function SaleOrders() {
           </Button>
           <span className="text-xs text-muted-foreground">Customer & Brand names must match Masters.</span>
         </div>
-      </Card>
+      </Card>}
 
       {/* List */}
       <Card className="rounded-sm border-border shadow-none">
@@ -663,7 +667,7 @@ export default function SaleOrders() {
                 <TableHead className="text-right text-xs uppercase tracking-widest">Ordered</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Pending</TableHead>
                 <TableHead className="text-xs uppercase tracking-widest">Fulfilment</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>}
                 <TableHead className="text-xs uppercase tracking-widest">Status</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Actions</TableHead>
               </TableRow>
@@ -683,7 +687,7 @@ export default function SaleOrders() {
                   <TableCell className="text-right tabular-nums">{num(o.totals.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.totals.pending_qty)}</TableCell>
                   <TableCell><Progress ordered={o.totals.ordered_qty} dispatched={o.totals.dispatched_qty} /></TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(o.totals.amount)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums">{inr(o.totals.amount)}</TableCell>}
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-1">
                       <StatusBadge status={o.totals.status} />
@@ -691,14 +695,14 @@ export default function SaleOrders() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    {canEdit && <div className="flex justify-end gap-1">
                       <Button data-testid={`so-edit-${o.id}`} variant="ghost" size="icon" className="h-8 w-8" onClick={() => requireUnlock(() => startEdit(o))}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button data-testid={`so-delete-${o.id}`} variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => requireUnlock(() => remove(o.id))}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
-                    </div>
+                    </div>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -707,7 +711,7 @@ export default function SaleOrders() {
                 <TableCell className="text-right tabular-nums">{num(listTotals.ordered)}</TableCell>
                 <TableCell className="text-right tabular-nums text-amber-700">{num(listTotals.pending)}</TableCell>
                 <TableCell />
-                <TableCell className="text-right tabular-nums">{inr(listTotals.amount)}</TableCell>
+                {seesMoney && <TableCell className="text-right tabular-nums">{inr(listTotals.amount)}</TableCell>}
                 <TableCell colSpan={2} />
               </TableRow>
             </TableBody>

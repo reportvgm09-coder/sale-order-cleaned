@@ -319,8 +319,35 @@ means something. Other accounts are in the `users` collection.
 |---|---|
 | `admin` | everything, including the Users page |
 | `editor` | read and change all data |
-| `viewer` | read only |
-| `salesman` | his own screens: enter orders and expenses, see only his own |
+| `viewer` | read only, **quantities only** - no money anywhere |
+| `salesman` | his own screens: enter orders and expenses, see only his own, quantities only |
+
+### Only admin and editor see money
+
+Rates, amounts and values are stripped from every API answer for any other
+role by **`MoneyGuardRoute`**, the `route_class` of `api_router`. It works on the
+way out, on every endpoint, so one added later is covered without anyone
+remembering - the same reasoning as the login guard on the router.
+
+- **What counts as money is decided by field name** in `is_money_key()`:
+  `rate`, `amount`, `value`, `total`, `net`, `expense`, `by_head`, and anything
+  ending `_value`, `_amount`, `_rate` or `_pct`. **Name a new money field to
+  match, and never give a quantity one of those names.** That rule is why the
+  customer timeline's piece count is `total_qty`: it was `total`, and the guard
+  quietly blanked a viewer's "pcs dispatched".
+- **The one exception** is a salesman's own expense vouchers
+  (`SALESMAN_OWN_MONEY`): he typed those amounts in.
+- **`/backup` is refused** outright for these roles - it is the whole database.
+- **A salesman never sends a rate.** `salesman_order_rates()` sets each one on
+  the server: a brand already on the order keeps the office's rate, a new one
+  takes the brand's rate from Masters.
+
+On screen, `seesMoney` from `useAuth()` hides the matching columns, stats and
+totals. When hiding a column, fix the total row's `colSpan` to match (see the
+table rule under Conventions). Export columns carry `money: true`, and
+`ExportDialog` drops them in one place. The order-entry forms are built on
+rates, so for a viewer the whole entry side is hidden (`canEdit`) rather than
+half-emptied. Expenses is all money, so a viewer has no Expenses tab.
 
 - **Viewers are stopped by HTTP method** in `require_auth`: any POST, PUT or
   DELETE is refused. Every write here is one of those, so a new endpoint is
@@ -341,9 +368,9 @@ means something. Other accounts are in the `users` collection.
 
 ### The salesman role is a different app, fenced on the server
 
-A salesman login gets two screens of its own - `pages/MyOrders.jsx` and
-`pages/MyExpenses.jsx` - and `AppRoutes` sends any other address back to the
-first. Hiding pages is not the protection, though. On the server:
+A salesman login gets three screens of its own - `pages/MyOrders.jsx`,
+`pages/MyExpenses.jsx` and `pages/MyReports.jsx` - and `AppRoutes` sends any
+other address back to the first. Hiding pages is not the protection, though. On the server:
 
 - **`SALESMAN_ROUTES` is an allowlist** of (method, route template) checked in
   `require_auth`. A report or endpoint added later is closed to salesmen until
@@ -364,10 +391,67 @@ first. Hiding pages is not the protection, though. On the server:
 - **Once anything has been dispatched, the order is the office's.** He can no
   longer edit or delete it (`salesman_may_change_order`).
 - **The only masters he can add** are customers and his own lines.
-- He sees no money beyond his own orders' values: no dashboard, no reports, no
-  expense summary, no dispatch figures beyond "4 of 10 sent".
+- He sees **no money** except his own expense vouchers - see "Only admin and
+  editor see money" above.
+
+**His Reports tab** (`pages/MyReports.jsx`) - a pivot plus four fixed
+summaries - is worked out in the browser from `/sale-orders`, which is already
+narrowed to his own orders. So it needed no new endpoint and opens nothing new.
+It is quantities only: orders, pieces ordered, sent and still to send.
+
+- **Order-level figures cannot be split by brand.** The order list carries
+  sent and pending per order, not per brand, so those measures are disabled
+  whenever brand is on either axis rather than shown wrong. The order count is
+  kept as a set of ids, so an order carrying two brands is one order in every
+  total.
 
 ---
+
+### The map places customers by their typed city
+
+`pages/MapView.jsx` (`/map`, and `/my-map` for a salesman) shades Madhya
+Pradesh's 52 districts by **pieces** ordered - thirds of the districts that have
+any orders: green top, yellow middle, red bottom, grey none. Pieces, never
+money, so every login gets the same page; a salesman's is his own orders
+because `/sale-orders` already is. Hover (tap, on a phone) shows a district's
+total split by sub-district (tehsil).
+
+- **The data** is `src/data/mp-map.json`, built by
+  `frontend/scripts/build-mp-map.mjs` from public sources named at the top of
+  the script: district outlines plus the Census 2011 list of 342 tehsils with
+  their positions. Each tehsil's district is taken from **where it sits**, not
+  from its 2011 label, which is what puts Agar Malwa's and Niwari's tehsils
+  under those newer districts. Districts made in 2023 (Mauganj, Maihar,
+  Pandhurna) are still tehsils of Rewa, Satna and Chhindwara in this data.
+  It is a lazy chunk - only the Map page downloads it.
+- **Matching** is `matchCustomer()` in `lib/mpMap.js`. Only a hand-picked place,
+  an exact name, a district's headquarters tehsil (Katni -> Murwara, Bhopal ->
+  Huzur) or a known renaming counts on the map. A near spelling, or a name two
+  tehsils share (Huzur, Shahpura, Sohagpur, Tendukheda), is only *suggested* -
+  a guess must never colour a district. Every one of the 342 tehsils matches
+  itself; keep it that way if you touch `norm()`.
+- **A pick is stored on the customer** as `map_place` (a tehsil code, or
+  `outside`) through `PUT /customers/{id}/map-place` - admin and editor only.
+  Changing a customer's city clears it, so a moved shop is matched afresh.
+
+### Phones
+
+Salesmen use this on a phone, and the office does too away from the desk.
+Check any layout change at 375px wide. The rules it follows:
+
+- **The office menu is a slide-out drawer below 1280px** (`xl`). Its twelve tabs
+  need about 1200px in a row. A salesman's four fit (words only, no icons, on a
+  phone), so he keeps them across
+  the top. Adding a tab? Check it still fits at 1280.
+- **Forms with fixed column widths stack on a phone.** A line of a form - brand,
+  rate, qty, amount - is a small card below `md` (or `sm` inside a dialog):
+  the brand across the top, the boxes beneath. Header rows hide there. Copy
+  that pattern rather than adding another `grid-cols-[1fr_120px_…]` that only
+  works on a desktop.
+- **Tables scroll sideways inside their own box**, never the page. The `Table`
+  component already wraps itself for that.
+- **Dialogs** keep a margin from the screen edge and scroll inside themselves
+  (set once in `ui/dialog.jsx`).
 
 ## Gotchas
 
@@ -430,8 +514,9 @@ directly (the auth guard is on the router, not on them).
 - **No pagination anywhere.** Fine now, warns at 20k documents.
 - **No audit trail** of who changed what - roles exist, but orders do not record
   which user saved them.
-- **Viewers still see the add / edit / delete buttons.** The server refuses the
-  action with a plain message; the buttons are not yet hidden per role.
+- **Viewers still see some add / edit / delete buttons** - on Masters, Dispatch
+  and the delete icons on lists. The server refuses the action with a plain
+  message. Order entry and the Edit / Dispatch buttons are already hidden.
 - **Order edits overwrite** with no history.
 - **Dispatches can be deleted but not edited.**
 - When Mongo is unreachable at boot, the index loop logs the same error 17

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Tag, ArrowRight, Search, FilterX } from "lucide-react";
 import { Loader } from "@/components/Loader";
+import { useAuth } from "@/context/Auth";
 
 // "Moving" means the brand still has pieces waiting to go out on some order.
 const isMoving = (b) => (b.pending_qty || 0) > 0;
@@ -20,6 +21,7 @@ export default function BrandsList() {
   const [status, setStatus] = useState("all");
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { seesMoney } = useAuth();
 
   useEffect(() => {
     (async () => {
@@ -113,13 +115,13 @@ export default function BrandsList() {
             <TableHeader>
               <TableRow className="bg-secondary/60">
                 <TableHead className="text-xs uppercase tracking-widest">Brand</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Rate</TableHead>
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Rate</TableHead>}
                 <TableHead className="text-right text-xs uppercase tracking-widest">Orders</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Customers</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Ordered Pcs</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Pending Pcs</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Order Value</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Order Value</TableHead>}
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>}
                 <TableHead className="text-right text-xs uppercase tracking-widest">History</TableHead>
               </TableRow>
             </TableHeader>
@@ -139,13 +141,13 @@ export default function BrandsList() {
                       {b.name}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{inr(b.rate)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums text-muted-foreground">{inr(b.rate)}</TableCell>}
                   <TableCell className="text-right tabular-nums">{num(b.order_count)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(b.customer_count)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(b.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(b.pending_qty)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(b.amount)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-emerald-700">{inr(b.dispatched_value)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums">{inr(b.amount)}</TableCell>}
+                  {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(b.dispatched_value)}</TableCell>}
                   <TableCell className="text-right">
                     <Button
                       data-testid={`brand-view-${b.id}`}
@@ -163,14 +165,15 @@ export default function BrandsList() {
                 </TableRow>
               ))}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="brands-total-row">
-                <TableCell colSpan={2}>Grand Total</TableCell>
+                {/* spans the name, and the rate column when it is shown */}
+                <TableCell colSpan={seesMoney ? 2 : 1}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(totals.orders)}</TableCell>
                 {/* No customer total: one shop buying three brands would be counted three times. */}
                 <TableCell />
                 <TableCell className="text-right tabular-nums">{num(totals.ordered)}</TableCell>
                 <TableCell className="text-right tabular-nums text-amber-700">{num(totals.pending)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>
-                <TableCell className="text-right tabular-nums text-emerald-700">{inr(totals.dispatched_value)}</TableCell>
+                {seesMoney && <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>}
+                {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(totals.dispatched_value)}</TableCell>}
                 <TableCell />
               </TableRow>
             </TableBody>

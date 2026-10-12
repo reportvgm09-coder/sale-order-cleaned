@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { useAuth } from "@/context/Auth";
 import { FileSpreadsheet, RotateCcw } from "lucide-react";
 
 const PREF_KEY = "ledger_export_columns";
@@ -27,7 +28,9 @@ const savePrefs = (all) => {
 /**
  * Column picker shown before every Excel export, remembering what you chose last time.
  *
- * sheets: [{ name, columns: [{ key, get(record, index) }], data: [...] }]
+ * sheets: [{ name, columns: [{ key, get(record, index), money? }], data: [...] }]
+ *   `money: true` marks a rate, amount or value column. It is left out for a
+ *   login that may not see money, and a sheet left with no columns goes too.
  *   `data` is already flattened - one entry per spreadsheet row - so a sheet that
  *   lists order lines passes { order, item } pairs rather than orders.
  *
@@ -35,7 +38,11 @@ const savePrefs = (all) => {
  * That way a column added to the app later shows up by default instead of being
  * silently missing from your exports forever.
  */
-export function ExportDialog({ open, onOpenChange, storageKey, fileName, sheets, title, description }) {
+export function ExportDialog({ open, onOpenChange, storageKey, fileName, sheets: allSheets, title, description }) {
+  const { seesMoney } = useAuth();
+  const sheets = seesMoney
+    ? allSheets
+    : allSheets.map((s) => ({ ...s, columns: s.columns.filter((c) => !c.money) })).filter((s) => s.columns.length > 0);
   const [state, setState] = useState({});
   const [busy, setBusy] = useState(false);
 

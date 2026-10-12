@@ -26,7 +26,7 @@ const PERIOD_PAGE = 12;
 const Stat = ({ label, value, testid }) => (
   <Card data-testid={testid} className="rounded-sm border-2 border-border p-4 shadow-none">
     <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{label}</div>
-    <div className="mt-1 font-display text-2xl font-extrabold tabular-nums">{value}</div>
+    <div className="mt-1 break-words font-display text-xl font-extrabold tabular-nums sm:text-2xl">{value}</div>
   </Card>
 );
 
@@ -42,7 +42,7 @@ export default function BrandHistory() {
   const [busy, setBusy] = useState(null);
   const [masters, setMasters] = useState({ brands: [], exhibitions: [], salesmen: [], seasons: [] });
   const [exportOpen, setExportOpen] = useState(false);
-  const { requireUnlock } = useAuth();
+  const { requireUnlock, seesMoney, canEdit } = useAuth();
 
   const load = async () => {
     try {
@@ -165,14 +165,18 @@ export default function BrandHistory() {
       name: "Summary",
       data: [
         { Field: "Brand", Value: brand.name },
-        { Field: "Rate", Value: brand.rate || 0 },
+        ...(seesMoney ? [{ Field: "Rate", Value: brand.rate || 0 }] : []),
         { Field: "Orders", Value: summary.order_count },
         { Field: "Customers", Value: summary.customer_count },
         { Field: "Pieces Ordered", Value: summary.ordered },
         { Field: "Pieces Dispatched", Value: summary.dispatched },
         { Field: "Pieces Pending", Value: summary.pending },
-        { Field: "Order Value (INR)", Value: summary.amount },
-        { Field: "Dispatched Value (INR)", Value: summary.dispatched_value || 0 },
+        ...(seesMoney
+          ? [
+              { Field: "Order Value (INR)", Value: summary.amount },
+              { Field: "Dispatched Value (INR)", Value: summary.dispatched_value || 0 },
+            ]
+          : []),
         { Field: "Statement Date", Value: new Date().toLocaleDateString("en-IN") },
       ],
       columns: [
@@ -193,12 +197,12 @@ export default function BrandHistory() {
         { key: "Via", get: (o) => o.exhibition || o.salesman || "" },
         { key: "Line", get: (o) => o.line || "" },
         { key: "Season", get: (o) => o.season || "" },
-        { key: "Rate", get: (o) => o.rate },
+        { key: "Rate", get: (o) => o.rate, money: true },
         { key: "Ordered", get: (o) => o.ordered },
         { key: "Dispatched", get: (o) => o.dispatched },
         { key: "Pending", get: (o) => o.pending },
-        { key: "Order Value (INR)", get: (o) => o.amount },
-        { key: "Dispatched Value (INR)", get: (o) => o.dispatched_value || 0 },
+        { key: "Order Value (INR)", get: (o) => o.amount, money: true },
+        { key: "Dispatched Value (INR)", get: (o) => o.dispatched_value || 0, money: true },
         { key: "Order Pcs (All Brands)", get: (o) => o.order_qty },
         { key: "Order Status", get: (o) => o.status },
         { key: "Order State", get: (o) => o.state },
@@ -212,7 +216,7 @@ export default function BrandHistory() {
         { key: "Starting", get: (b) => (b.key ? xlDate(period === "week" ? b.key : `${b.key}-01`) : "") },
         { key: "Dispatches", get: (b) => b.count },
         { key: "Qty", get: (b) => b.qty },
-        { key: "Amount (INR)", get: (b) => b.amount },
+        { key: "Amount (INR)", get: (b) => b.amount, money: true },
       ],
     },
     {
@@ -224,7 +228,7 @@ export default function BrandHistory() {
         { key: "Customer", get: (d) => d.customer || "" },
         { key: "Date", get: (d) => xlDate(d.dispatch_date) },
         { key: "Qty", get: (d) => d.qty },
-        { key: "Actual Amount (INR)", get: (d) => (d.value == null ? "" : d.value) },
+        { key: "Actual Amount (INR)", get: (d) => (d.value == null ? "" : d.value), money: true },
       ],
     },
   ];
@@ -237,9 +241,11 @@ export default function BrandHistory() {
             <ArrowLeft className="h-4 w-4" /> All Brands
           </Button>
           <h1 className="font-display text-3xl font-extrabold tracking-tight" data-testid="brand-history-name">{brand.name}</h1>
-          <p className="flex items-center gap-1 text-sm text-muted-foreground">
-            <IndianRupee className="h-3.5 w-3.5" /> General rate {inr(brand.rate)}
-          </p>
+          {seesMoney && (
+            <p className="flex items-center gap-1 text-sm text-muted-foreground">
+              <IndianRupee className="h-3.5 w-3.5" /> General rate {inr(brand.rate)}
+            </p>
+          )}
         </div>
         <div className="flex gap-2 no-print">
           <Button data-testid="brand-export-btn" variant="outline" onClick={() => setExportOpen(true)} className="gap-2 rounded-sm">
@@ -251,13 +257,13 @@ export default function BrandHistory() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 ${seesMoney ? "lg:grid-cols-6" : "lg:grid-cols-4"}`}>
         <Stat testid="brand-stat-orders" label="Orders" value={num(summary.order_count)} />
         <Stat testid="brand-stat-customers" label="Customers" value={num(summary.customer_count)} />
         <Stat testid="brand-stat-ordered" label="Pieces Ordered" value={num(summary.ordered)} />
         <Stat testid="brand-stat-pending" label="Pending Pieces" value={num(summary.pending)} />
-        <Stat testid="brand-stat-amount" label="Order Value" value={inr(summary.amount)} />
-        <Stat testid="brand-stat-dispatched-value" label="Dispatched Value" value={inr(summary.dispatched_value || 0)} />
+        {seesMoney && <Stat testid="brand-stat-amount" label="Order Value" value={inr(summary.amount)} />}
+        {seesMoney && <Stat testid="brand-stat-dispatched-value" label="Dispatched Value" value={inr(summary.dispatched_value || 0)} />}
       </div>
 
       {/* Orders carrying this brand */}
@@ -320,12 +326,12 @@ export default function BrandHistory() {
                   <TableHead className="text-xs uppercase tracking-widest">Order Date</TableHead>
                   <TableHead className="text-xs uppercase tracking-widest">Customer</TableHead>
                   <TableHead className="text-xs uppercase tracking-widest">Event / Season</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Rate</TableHead>
+                  {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Rate</TableHead>}
                   <TableHead className="text-right text-xs uppercase tracking-widest">Ordered</TableHead>
                   <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched</TableHead>
                   <TableHead className="text-right text-xs uppercase tracking-widest">Pending</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Order Value</TableHead>
-                  <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>
+                  {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Order Value</TableHead>}
+                  {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>}
                   <TableHead className="text-xs uppercase tracking-widest">Status</TableHead>
                   <TableHead className="text-right text-xs uppercase tracking-widest no-print">Actions</TableHead>
                 </TableRow>
@@ -358,15 +364,15 @@ export default function BrandHistory() {
                       <div>{EVENT_LABEL[o.event_type] || o.event_type}</div>
                       <div className="text-xs text-muted-foreground">{(o.line || o.exhibition || o.salesman || "—")}{o.season ? ` · ${o.season}` : ""}</div>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">{inr(o.rate)}</TableCell>
+                    {seesMoney && <TableCell className="text-right tabular-nums text-muted-foreground">{inr(o.rate)}</TableCell>}
                     <TableCell className="text-right tabular-nums">
                       {num(o.ordered)}
                       <div className="text-xs text-muted-foreground">of {num(o.order_qty)} pcs</div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{num(o.dispatched)}</TableCell>
                     <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.pending)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{inr(o.amount)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-emerald-700">{inr(o.dispatched_value || 0)}</TableCell>
+                    {seesMoney && <TableCell className="text-right tabular-nums">{inr(o.amount)}</TableCell>}
+                    {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(o.dispatched_value || 0)}</TableCell>}
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
                         <StatusBadge status={o.status} />
@@ -374,7 +380,7 @@ export default function BrandHistory() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right no-print">
-                      <div className="flex justify-end gap-1">
+                      {canEdit && <div className="flex justify-end gap-1">
                         <Button
                           data-testid={`brand-edit-btn-${o.id}`}
                           variant="outline"
@@ -395,17 +401,18 @@ export default function BrandHistory() {
                         >
                           <Truck className="h-3.5 w-3.5" /> Dispatch
                         </Button>
-                      </div>
+                      </div>}
                     </TableCell>
                   </TableRow>
                 ))}
                 <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="brand-orders-total-row">
-                  <TableCell colSpan={5}>Grand Total ({filtered.length})</TableCell>
+                  {/* spans up to Ordered - one fewer when the rate column is not shown */}
+                  <TableCell colSpan={seesMoney ? 5 : 4}>Grand Total ({filtered.length})</TableCell>
                   <TableCell className="text-right tabular-nums">{num(fTotals.ordered)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(fTotals.dispatched)}</TableCell>
                   <TableCell className="text-right tabular-nums text-amber-700">{num(fTotals.pending)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(fTotals.amount)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-emerald-700">{inr(fTotals.dispatched_value)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums">{inr(fTotals.amount)}</TableCell>}
+                  {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(fTotals.dispatched_value)}</TableCell>}
                   <TableCell colSpan={2} />
                 </TableRow>
               </TableBody>
@@ -458,7 +465,7 @@ export default function BrandHistory() {
                 <TableHead className="text-xs uppercase tracking-widest">{period === "week" ? "Week" : "Month"}</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Dispatches</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Qty</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -467,12 +474,12 @@ export default function BrandHistory() {
                   <TableCell className="font-medium">{periodLabel(b.key)}</TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">{num(b.count)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(b.qty)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-emerald-700">{inr(b.amount)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(b.amount)}</TableCell>}
                 </TableRow>
               ))}
               {dispatchPeriods.length > PERIOD_PAGE && (
                 <TableRow data-testid="brand-period-more">
-                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={seesMoney ? 4 : 3} className="text-center text-sm text-muted-foreground">
                     <Button variant="ghost" size="sm" onClick={() => setAllPeriods((v) => !v)} className="h-7 rounded-sm text-xs">
                       {allPeriods
                         ? `Show only the latest ${PERIOD_PAGE}`
@@ -486,7 +493,7 @@ export default function BrandHistory() {
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="brand-period-total-row">
                 <TableCell colSpan={2}>Grand Total ({dispatchPeriods.length} {period === "week" ? "weeks" : "months"})</TableCell>
                 <TableCell className="text-right tabular-nums">{num(pTotals.qty)}</TableCell>
-                <TableCell className="text-right tabular-nums text-emerald-700">{inr(pTotals.amount)}</TableCell>
+                {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(pTotals.amount)}</TableCell>}
               </TableRow>
             </TableBody>
           </Table>
@@ -517,7 +524,7 @@ export default function BrandHistory() {
                     <span className="font-display text-sm font-bold">{fmtDate(d.dispatch_date)}</span>
                     <span className="rounded-sm border border-border px-2 py-0.5 font-mono text-xs">{d.sale_order_id}</span>
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">{num(d.qty)} pcs dispatched</span>
-                    {d.value != null && (
+                    {seesMoney && d.value != null && (
                       <span className="rounded-sm border border-border px-2 py-0.5 text-xs font-semibold tabular-nums">{inr(d.value)}</span>
                     )}
                   </div>

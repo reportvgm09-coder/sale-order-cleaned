@@ -152,6 +152,10 @@ export function AuthProvider({ children }) {
         role: profile.role,
         isAdmin: profile.role === "admin",
         isSalesman: profile.role === "salesman",
+        // rates, amounts and values - the server strips them for everyone else
+        seesMoney: profile.role === "admin" || profile.role === "editor",
+        // may change office data - the same two roles, named for what it guards
+        canEdit: profile.role === "admin" || profile.role === "editor",
         // the salesman in Masters this login is, for salesman logins
         salesmanId: profile.salesman_id,
         signOut,

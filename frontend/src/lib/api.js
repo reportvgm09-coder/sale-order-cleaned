@@ -91,6 +91,8 @@ export const api = {
   // customers
   listCustomers: () => client.get(`/customers`).then((r) => r.data),
   customerHistory: (id) => client.get(`/customers/${id}/history`).then((r) => r.data),
+  // place: a sub-district code, "outside", or null to match the city again
+  setCustomerMapPlace: (id, place) => client.put(`/customers/${id}/map-place`, { place }).then((r) => r.data),
   // brands
   listBrands: () => client.get(`/brands`).then((r) => r.data),
   brandHistory: (id) => client.get(`/brands/${id}/history`).then((r) => r.data),

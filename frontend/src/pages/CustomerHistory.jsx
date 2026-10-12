@@ -20,7 +20,7 @@ const EVENT_LABEL = { exhibition: "Exhibition", door_to_door: "Door to Door" };
 const Stat = ({ label, value, testid }) => (
   <Card data-testid={testid} className="rounded-sm border-2 border-border p-4 shadow-none">
     <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{label}</div>
-    <div className="mt-1 font-display text-2xl font-extrabold tabular-nums">{value}</div>
+    <div className="mt-1 break-words font-display text-xl font-extrabold tabular-nums sm:text-2xl">{value}</div>
   </Card>
 );
 
@@ -34,7 +34,7 @@ export default function CustomerHistory() {
   const [editOrder, setEditOrder] = useState(null);
   const [masters, setMasters] = useState({ brands: [], exhibitions: [], salesmen: [], seasons: [] });
   const [exportOpen, setExportOpen] = useState(false);
-  const { requireUnlock } = useAuth();
+  const { requireUnlock, seesMoney, canEdit } = useAuth();
 
   const load = async () => {
     try {
@@ -115,8 +115,12 @@ export default function CustomerHistory() {
         { Field: "Pieces Ordered", Value: summary.ordered },
         { Field: "Pieces Dispatched", Value: summary.dispatched },
         { Field: "Pieces Pending", Value: summary.pending },
-        { Field: "Order Value (INR)", Value: summary.amount },
-        { Field: "Dispatched Value (INR)", Value: summary.dispatched_value || 0 },
+        ...(seesMoney
+          ? [
+              { Field: "Order Value (INR)", Value: summary.amount },
+              { Field: "Dispatched Value (INR)", Value: summary.dispatched_value || 0 },
+            ]
+          : []),
         { Field: "Statement Date", Value: new Date().toLocaleDateString("en-IN") },
       ],
       columns: [
@@ -137,8 +141,8 @@ export default function CustomerHistory() {
         { key: "Ordered", get: (o) => o.totals.ordered_qty },
         { key: "Dispatched", get: (o) => o.totals.dispatched_qty },
         { key: "Pending", get: (o) => o.totals.pending_qty },
-        { key: "Order Value (INR)", get: (o) => o.totals.amount },
-        { key: "Dispatched Value (INR)", get: (o) => o.totals.dispatched_value || 0 },
+        { key: "Order Value (INR)", get: (o) => o.totals.amount, money: true },
+        { key: "Dispatched Value (INR)", get: (o) => o.totals.dispatched_value || 0, money: true },
         { key: "Status", get: (o) => o.totals.status },
       ],
     },
@@ -153,9 +157,9 @@ export default function CustomerHistory() {
         { key: "Via", get: (x) => x.o.exhibition || x.o.salesman || "" },
         { key: "Season", get: (x) => x.o.season || "" },
         { key: "Brand", get: (x) => x.it.brand },
-        { key: "Rate", get: (x) => x.it.rate },
+        { key: "Rate", get: (x) => x.it.rate, money: true },
         { key: "Qty", get: (x) => x.it.qty },
-        { key: "Amount", get: (x) => (Number(x.it.rate) || 0) * (Number(x.it.qty) || 0) },
+        { key: "Amount", get: (x) => (Number(x.it.rate) || 0) * (Number(x.it.qty) || 0), money: true },
         { key: "Order Status", get: (x) => x.o.totals.status },
       ],
     },
@@ -168,7 +172,7 @@ export default function CustomerHistory() {
         { key: "Date", get: (x) => xlDate(x.d.dispatch_date) },
         { key: "Brand", get: (x) => x.it.brand },
         { key: "Qty", get: (x) => x.it.qty },
-        { key: "Actual Amount (INR)", get: (x) => (x.it.amount == null ? "" : x.it.amount) },
+        { key: "Actual Amount (INR)", get: (x) => (x.it.amount == null ? "" : x.it.amount), money: true },
       ],
     },
   ];
@@ -195,12 +199,12 @@ export default function CustomerHistory() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 ${seesMoney ? "lg:grid-cols-5" : ""}`}>
         <Stat testid="history-stat-orders" label="Total Orders" value={num(summary.order_count)} />
         <Stat testid="history-stat-ordered" label="Pieces Ordered" value={num(summary.ordered)} />
         <Stat testid="history-stat-pending" label="Pending Pieces" value={num(summary.pending)} />
-        <Stat testid="history-stat-amount" label="Order Value" value={inr(summary.amount)} />
-        <Stat testid="history-stat-dispatched-value" label="Dispatched Value" value={inr(summary.dispatched_value || 0)} />
+        {seesMoney && <Stat testid="history-stat-amount" label="Order Value" value={inr(summary.amount)} />}
+        {seesMoney && <Stat testid="history-stat-dispatched-value" label="Dispatched Value" value={inr(summary.dispatched_value || 0)} />}
       </div>
 
       {/* Orders */}
@@ -253,8 +257,8 @@ export default function CustomerHistory() {
                 <TableHead className="text-xs uppercase tracking-widest">Items</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Ordered</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Pending</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Order Value</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Order Value</TableHead>}
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>}
                 <TableHead className="text-xs uppercase tracking-widest">Status</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest no-print">Actions</TableHead>
               </TableRow>
@@ -273,12 +277,12 @@ export default function CustomerHistory() {
                     <div className="text-xs text-muted-foreground">{(o.exhibition || o.salesman || "—")}{o.season ? ` · ${o.season}` : ""}</div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {o.items.map((it, i) => <div key={i}>{it.brand} × {num(it.qty)} @ {inr(it.rate)}</div>)}
+                    {o.items.map((it, i) => <div key={i}>{it.brand} × {num(it.qty)}{seesMoney ? ` @ ${inr(it.rate)}` : ""}</div>)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{num(o.totals.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.totals.pending_qty)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(o.totals.amount)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-emerald-700">{inr(o.totals.dispatched_value || 0)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums">{inr(o.totals.amount)}</TableCell>}
+                  {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(o.totals.dispatched_value || 0)}</TableCell>}
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-1">
                       <StatusBadge status={o.totals.status} />
@@ -286,7 +290,7 @@ export default function CustomerHistory() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right no-print">
-                    <div className="flex justify-end gap-1">
+                    {canEdit && <div className="flex justify-end gap-1">
                       <Button
                         data-testid={`ledger-edit-btn-${o.id}`}
                         variant="outline"
@@ -306,7 +310,7 @@ export default function CustomerHistory() {
                       >
                         <Truck className="h-3.5 w-3.5" /> Dispatch
                       </Button>
-                    </div>
+                    </div>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -314,8 +318,8 @@ export default function CustomerHistory() {
                 <TableCell colSpan={4}>Grand Total ({filtered.length})</TableCell>
                 <TableCell className="text-right tabular-nums">{num(fTotals.ordered)}</TableCell>
                 <TableCell className="text-right tabular-nums text-amber-700">{num(fTotals.pending)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(fTotals.amount)}</TableCell>
-                <TableCell className="text-right tabular-nums text-emerald-700">{inr(fTotals.dispatched_value)}</TableCell>
+                {seesMoney && <TableCell className="text-right tabular-nums">{inr(fTotals.amount)}</TableCell>}
+                {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(fTotals.dispatched_value)}</TableCell>}
                 <TableCell colSpan={2} />
               </TableRow>
             </TableBody>
@@ -346,8 +350,8 @@ export default function CustomerHistory() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-display text-sm font-bold">{fmtDate(d.dispatch_date)}</span>
                     <span className="rounded-sm border border-border px-2 py-0.5 font-mono text-xs">{d.sale_order_id}</span>
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">{num(d.total)} pcs dispatched</span>
-                    {d.value != null && (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">{num(d.total_qty)} pcs dispatched</span>
+                    {seesMoney && d.value != null && (
                       <span className="rounded-sm border border-border px-2 py-0.5 text-xs font-semibold tabular-nums">{inr(d.value)}</span>
                     )}
                   </div>

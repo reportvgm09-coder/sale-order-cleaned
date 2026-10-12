@@ -40,8 +40,8 @@ const DETAIL_COLS = [
   { key: "ordered_qty", label: "Ordered", num: true, get: (r) => r.ordered_qty },
   { key: "dispatched_qty", label: "Dispatched", num: true, get: (r) => r.dispatched_qty },
   { key: "pending_qty", label: "Pending", num: true, get: (r) => r.pending_qty },
-  { key: "amount", label: "Amount", num: true, get: (r) => r.amount },
-  { key: "dispatched_value", label: "Dispatched ₹", num: true, get: (r) => r.dispatched_value },
+  { key: "amount", label: "Amount", num: true, money: true, get: (r) => r.amount },
+  { key: "dispatched_value", label: "Dispatched ₹", num: true, money: true, get: (r) => r.dispatched_value },
 ];
 
 export default function Reports() {
@@ -54,7 +54,7 @@ export default function Reports() {
   const [busy, setBusy] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [sort, setSort] = useState(null); // { key, dir } - null keeps the server's order
-  const { requireUnlock } = useAuth();
+  const { requireUnlock, seesMoney, canEdit } = useAuth();
 
   const load = async () => {
     try {
@@ -177,7 +177,8 @@ export default function Reports() {
       g.pending_value += r.pending_value;
       g.dispatched_value += r.dispatched_value || 0;
     });
-    return Object.values(map).sort((a, b) => b.amount - a.amount);
+    // biggest first - by value where there is one; a viewer gets no values, so pieces
+    return Object.values(map).sort((a, b) => (b.amount - a.amount) || (b.ordered_qty - a.ordered_qty));
   }, [filtered, groupBy]);
 
   const reset = () => setF({ event_type: "all", customer: "all", brand: "all", exhibition: "all", salesman: "all", line: "all", season: "all", city: "all" });
@@ -205,9 +206,9 @@ export default function Reports() {
         { key: "Ordered", get: (r) => r.ordered_qty },
         { key: "Dispatched", get: (r) => r.dispatched_qty },
         { key: "Pending", get: (r) => r.pending_qty },
-        { key: "Order Value", get: (r) => r.amount },
-        { key: "Dispatched Value", get: (r) => r.dispatched_value || 0 },
-        { key: "Pending Value", get: (r) => r.pending_value },
+        { key: "Order Value", get: (r) => r.amount, money: true },
+        { key: "Dispatched Value", get: (r) => r.dispatched_value || 0, money: true },
+        { key: "Pending Value", get: (r) => r.pending_value, money: true },
       ],
     },
     {
@@ -218,9 +219,9 @@ export default function Reports() {
         { key: "Ordered", get: (p) => p.ordered_qty },
         { key: "Dispatched", get: (p) => p.dispatched_qty },
         { key: "Pending", get: (p) => p.pending_qty },
-        { key: "Order Value", get: (p) => p.amount },
-        { key: "Dispatched Value", get: (p) => p.dispatched_value },
-        { key: "Pending Value", get: (p) => p.pending_value },
+        { key: "Order Value", get: (p) => p.amount, money: true },
+        { key: "Dispatched Value", get: (p) => p.dispatched_value, money: true },
+        { key: "Pending Value", get: (p) => p.pending_value, money: true },
       ],
     },
   ];
@@ -283,12 +284,16 @@ export default function Reports() {
           { l: "Ordered", v: num(totals.ordered_qty), t: "sum-ordered" },
           { l: "Dispatched", v: num(totals.dispatched_qty), t: "sum-dispatched" },
           { l: "Pending", v: num(totals.pending_qty), t: "sum-pending" },
-          { l: "Order Value", v: inr(totals.amount), t: "sum-amount" },
-          { l: "Dispatched Value", v: inr(totals.dispatched_value), t: "sum-dispatched-value" },
+          ...(seesMoney
+            ? [
+                { l: "Order Value", v: inr(totals.amount), t: "sum-amount" },
+                { l: "Dispatched Value", v: inr(totals.dispatched_value), t: "sum-dispatched-value" },
+              ]
+            : []),
         ].map((s) => (
           <Card key={s.t} data-testid={`report-${s.t}`} className="rounded-sm border-border p-4 shadow-none">
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{s.l}</div>
-            <div className="mt-1 font-display text-2xl font-extrabold tabular-nums">{s.v}</div>
+            <div className="mt-1 break-words font-display text-xl font-extrabold tabular-nums sm:text-2xl">{s.v}</div>
           </Card>
         ))}
       </div>
@@ -320,9 +325,13 @@ export default function Reports() {
                 <TableHead className="text-right text-xs uppercase tracking-widest">Ordered</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Pending</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Pending Value</TableHead>
+                {seesMoney && (
+                  <>
+                    <TableHead className="text-right text-xs uppercase tracking-widest">Amount</TableHead>
+                    <TableHead className="text-right text-xs uppercase tracking-widest">Dispatched ₹</TableHead>
+                    <TableHead className="text-right text-xs uppercase tracking-widest">Pending Value</TableHead>
+                  </>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -332,9 +341,13 @@ export default function Reports() {
                   <TableCell className="text-right tabular-nums">{num(p.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">{num(p.dispatched_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(p.pending_qty)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(p.amount)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-emerald-700">{inr(p.dispatched_value)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(p.pending_value)}</TableCell>
+                  {seesMoney && (
+                    <>
+                      <TableCell className="text-right tabular-nums">{inr(p.amount)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-emerald-700">{inr(p.dispatched_value)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{inr(p.pending_value)}</TableCell>
+                    </>
+                  )}
                 </TableRow>
               ))}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="pivot-total-row">
@@ -342,9 +355,13 @@ export default function Reports() {
                 <TableCell className="text-right tabular-nums">{num(totals.ordered_qty)}</TableCell>
                 <TableCell className="text-right tabular-nums">{num(totals.dispatched_qty)}</TableCell>
                 <TableCell className="text-right tabular-nums text-amber-700">{num(totals.pending_qty)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>
-                <TableCell className="text-right tabular-nums text-emerald-700">{inr(totals.dispatched_value)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(totals.pending_value)}</TableCell>
+                {seesMoney && (
+                  <>
+                    <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-emerald-700">{inr(totals.dispatched_value)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{inr(totals.pending_value)}</TableCell>
+                  </>
+                )}
               </TableRow>
             </TableBody>
           </Table>
@@ -364,7 +381,7 @@ export default function Reports() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-secondary/60">
-                  {DETAIL_COLS.map((c) => (
+                  {DETAIL_COLS.filter((c) => seesMoney || !c.money).map((c) => (
                     <TableHead key={c.key} className={`text-xs uppercase tracking-widest ${c.num ? "text-right" : ""}`}>
                       <button
                         type="button"
@@ -395,10 +412,10 @@ export default function Reports() {
                     <TableCell className="text-right tabular-nums">{num(r.ordered_qty)}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{num(r.dispatched_qty)}</TableCell>
                     <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(r.pending_qty)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{inr(r.amount)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-emerald-700">{inr(r.dispatched_value || 0)}</TableCell>
+                    {seesMoney && <TableCell className="text-right tabular-nums">{inr(r.amount)}</TableCell>}
+                    {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(r.dispatched_value || 0)}</TableCell>}
                     <TableCell className="text-right no-print">
-                      <div className="flex justify-end gap-1">
+                      {canEdit && <div className="flex justify-end gap-1">
                         <Button
                           data-testid={`report-edit-${r.sale_order_id}`}
                           variant="outline"
@@ -419,7 +436,7 @@ export default function Reports() {
                         >
                           <Truck className="h-3.5 w-3.5" /> Dispatch
                         </Button>
-                      </div>
+                      </div>}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -428,8 +445,8 @@ export default function Reports() {
                   <TableCell className="text-right tabular-nums">{num(totals.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(totals.dispatched_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums text-amber-700">{num(totals.pending_qty)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-emerald-700">{inr(totals.dispatched_value)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>}
+                  {seesMoney && <TableCell className="text-right tabular-nums text-emerald-700">{inr(totals.dispatched_value)}</TableCell>}
                   <TableCell className="no-print" />
                 </TableRow>
               </TableBody>

@@ -76,7 +76,7 @@ export function DispatchDialog({ order, open, onOpenChange, onDone }) {
           <Input data-testid="ledger-dispatch-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 rounded-sm border-2" />
         </div>
         <div className="mt-2 rounded-sm border border-border">
-          <div className="grid grid-cols-[1fr_70px_80px_90px_120px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          <div className="hidden grid-cols-[1fr_70px_80px_90px_120px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground sm:grid">
             <div>Brand</div><div className="text-right">Ordered</div><div className="text-right">Pending</div><div className="text-right">Dispatch</div><div className="text-right">Actual ₹</div>
           </div>
           {rows.length === 0 ? (
@@ -86,11 +86,17 @@ export function DispatchDialog({ order, open, onOpenChange, onDone }) {
               const q = Number(qty[r.brand_id]) || 0;
               const suggested = q * (r.rate || 0);
               return (
-                <div key={r.brand_id} className="grid grid-cols-[1fr_70px_80px_90px_120px] items-center gap-2 px-3 py-2" data-testid={`ledger-dispatch-item-${r.brand_id}`}>
-                  <div className="text-sm font-medium">{r.brand}</div>
-                  <div className="text-right tabular-nums text-sm">{num(r.ordered)}</div>
-                  <div className="text-right tabular-nums text-sm font-semibold text-amber-700">{num(r.pending)}</div>
-                  <div className="flex justify-end">
+                // a phone gets the brand and its figures on one line, the two boxes beneath
+                <div key={r.brand_id} className="grid grid-cols-2 items-start gap-2 border-b border-border/60 px-3 py-2 sm:grid-cols-[1fr_70px_80px_90px_120px] sm:items-center sm:border-0" data-testid={`ledger-dispatch-item-${r.brand_id}`}>
+                  <div className="col-span-2 text-sm font-medium sm:col-span-1">
+                    {r.brand}
+                    <div className="text-xs font-normal text-muted-foreground sm:hidden">
+                      Ordered {num(r.ordered)} · <span className="font-semibold text-amber-700">Pending {num(r.pending)}</span>
+                    </div>
+                  </div>
+                  <div className="hidden text-right tabular-nums text-sm sm:block">{num(r.ordered)}</div>
+                  <div className="hidden text-right tabular-nums text-sm font-semibold text-amber-700 sm:block">{num(r.pending)}</div>
+                  <div className="flex sm:justify-end">
                     <Input
                       data-testid={`ledger-dispatch-qty-${r.brand_id}`}
                       type="number"
@@ -98,19 +104,21 @@ export function DispatchDialog({ order, open, onOpenChange, onDone }) {
                       max={r.pending}
                       value={qty[r.brand_id] || ""}
                       onChange={(e) => setQty({ ...qty, [r.brand_id]: e.target.value })}
-                      className="h-8 w-20 rounded-sm border-2 text-right"
-                      placeholder="0"
+                      inputMode="numeric"
+                      className="h-9 w-full rounded-sm border-2 text-right sm:h-8 sm:w-20"
+                      placeholder="Pcs now"
                     />
                   </div>
-                  <div className="flex flex-col items-end">
+                  <div className="flex flex-col items-stretch sm:items-end">
                     <Input
                       data-testid={`ledger-dispatch-amount-${r.brand_id}`}
                       type="number"
                       min="0"
                       value={amount[r.brand_id] ?? ""}
                       onChange={(e) => setAmount({ ...amount, [r.brand_id]: e.target.value })}
-                      className="h-8 w-28 rounded-sm border-2 text-right"
-                      placeholder={q > 0 ? String(Math.round(suggested)) : "optional"}
+                      inputMode="decimal"
+                      className="h-9 w-full rounded-sm border-2 text-right sm:h-8 sm:w-28"
+                      placeholder={q > 0 ? String(Math.round(suggested)) : "₹ optional"}
                     />
                     {q > 0 && (
                       <span className="mt-0.5 text-[10px] text-muted-foreground">
@@ -307,14 +315,15 @@ export function EditOrderDialog({ order, customer, masters, open, onOpenChange, 
 
         {/* Line items */}
         <div className="mt-2 rounded-sm border border-border">
-          <div className="grid grid-cols-[1fr_100px_90px_110px_36px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          <div className="hidden grid-cols-[1fr_100px_90px_110px_36px] gap-2 border-b border-border bg-secondary/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground sm:grid">
             <div>Brand</div><div>Rate (₹)</div><div>Qty</div><div className="text-right">Amount</div><div />
           </div>
           {draft.items.map((it, idx) => {
             const disp = dispatchedByBrand[it.brand_id] || 0;
             return (
-              <div key={it.id} className="grid grid-cols-[1fr_100px_90px_110px_36px] items-center gap-2 px-3 py-2" data-testid={`ledger-edit-item-${idx}`}>
-                <div>
+              // the same card-per-line layout as the order form on a phone
+              <div key={it.id} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 border-b border-border/60 px-3 py-2 sm:grid-cols-[1fr_100px_90px_110px_36px] sm:border-0" data-testid={`ledger-edit-item-${idx}`}>
+                <div className="col-span-2 sm:col-span-1">
                   <Select value={it.brand_id} onValueChange={(v) => selectBrand(idx, v)}>
                     <SelectTrigger data-testid={`ledger-edit-brand-${idx}`} className="rounded-sm"><SelectValue placeholder="Brand" /></SelectTrigger>
                     <SelectContent>
@@ -323,10 +332,10 @@ export function EditOrderDialog({ order, customer, masters, open, onOpenChange, 
                   </Select>
                   {disp > 0 && <p className="mt-0.5 text-[10px] text-muted-foreground">{num(disp)} already dispatched</p>}
                 </div>
-                <Input data-testid={`ledger-edit-rate-${idx}`} type="number" value={it.rate} onChange={(e) => setItem(idx, "rate", e.target.value)} className="h-9 rounded-sm" />
-                <Input data-testid={`ledger-edit-qty-${idx}`} type="number" value={it.qty} onChange={(e) => setItem(idx, "qty", e.target.value)} className="h-9 rounded-sm" />
+                <Input data-testid={`ledger-edit-rate-${idx}`} type="number" inputMode="decimal" placeholder="Rate ₹" value={it.rate} onChange={(e) => setItem(idx, "rate", e.target.value)} className="h-9 rounded-sm" />
+                <Input data-testid={`ledger-edit-qty-${idx}`} type="number" inputMode="numeric" placeholder="Qty" value={it.qty} onChange={(e) => setItem(idx, "qty", e.target.value)} className="h-9 rounded-sm" />
                 <div className="text-right tabular-nums text-sm font-medium">{inr((Number(it.rate) || 0) * (Number(it.qty) || 0))}</div>
-                <Button data-testid={`ledger-edit-remove-${idx}`} variant="ghost" size="icon" onClick={() => removeItem(idx)} className="h-8 w-8 text-destructive">
+                <Button data-testid={`ledger-edit-remove-${idx}`} variant="ghost" size="icon" onClick={() => removeItem(idx)} className="col-start-3 row-start-1 h-8 w-8 text-destructive sm:col-start-auto sm:row-start-auto">
                   <X className="h-4 w-4" />
                 </Button>
               </div>

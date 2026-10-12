@@ -10,12 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Building2, ArrowRight, Search, FilterX } from "lucide-react";
 import { Loader } from "@/components/Loader";
+import { useAuth } from "@/context/Auth";
 
 // "Active" means the customer still has pieces waiting to go out, i.e. at least
 // one order that is pending or partly dispatched.
 const isActive = (c) => (c.pending_qty || 0) > 0;
 
 export default function CustomersList() {
+  const { seesMoney } = useAuth();
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
@@ -113,7 +115,7 @@ export default function CustomersList() {
                 <TableHead className="text-xs uppercase tracking-widest">City</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Orders</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Pending Pcs</TableHead>
-                <TableHead className="text-right text-xs uppercase tracking-widest">Total Value</TableHead>
+                {seesMoney && <TableHead className="text-right text-xs uppercase tracking-widest">Total Value</TableHead>}
                 <TableHead className="text-right text-xs uppercase tracking-widest">History</TableHead>
               </TableRow>
             </TableHeader>
@@ -136,7 +138,7 @@ export default function CustomersList() {
                   <TableCell className="text-muted-foreground">{c.city || "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(c.order_count)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(c.pending_qty)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{inr(c.amount)}</TableCell>
+                  {seesMoney && <TableCell className="text-right tabular-nums">{inr(c.amount)}</TableCell>}
                   <TableCell className="text-right">
                     <Button data-testid={`customer-view-${c.id}`} variant="ghost" size="sm" className="gap-1" onClick={(e) => { e.stopPropagation(); navigate(`/customers/${c.id}`); }}>
                       View <ArrowRight className="h-4 w-4" />
@@ -148,7 +150,7 @@ export default function CustomersList() {
                 <TableCell colSpan={2}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(totals.orders)}</TableCell>
                 <TableCell className="text-right tabular-nums text-amber-700">{num(totals.pending)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>
+                {seesMoney && <TableCell className="text-right tabular-nums">{inr(totals.amount)}</TableCell>}
                 <TableCell />
               </TableRow>
             </TableBody>

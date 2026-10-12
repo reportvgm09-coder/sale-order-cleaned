@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { inr, num, today } from "@/lib/format";
 import { downloadSheet } from "@/lib/excel";
+import { useAuth } from "@/context/Auth";
 import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -112,6 +113,7 @@ const DeltaChip = ({ value, money }) => {
 
 /* ------------------------- Compare Datasets (multi-series) ------------------------- */
 function CompareDatasets({ rows }) {
+  const { seesMoney } = useAuth();
   const [primary, setPrimary] = useState("customer");
   const [selected, setSelected] = useState([]);
   const [breakdown, setBreakdown] = useState("season");
@@ -269,7 +271,7 @@ function CompareDatasets({ rows }) {
             <Label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Metric</Label>
             <Select value={metric} onValueChange={setMetric}>
               <SelectTrigger data-testid="compare-metric" className="h-9 rounded-sm border-2"><SelectValue /></SelectTrigger>
-              <SelectContent>{METRICS.map((m) => <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{METRICS.filter((m) => seesMoney || !m.money).map((m) => <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -380,6 +382,7 @@ function CompareDatasets({ rows }) {
 
 /* ------------------------- Top Movers ------------------------- */
 function TopMovers({ rows }) {
+  const { seesMoney } = useAuth();
   const [entity, setEntity] = useState("brand");
   const [period, setPeriod] = useState("financial_year");
   const [periodA, setPeriodA] = useState("");
@@ -500,7 +503,7 @@ function TopMovers({ rows }) {
             <Label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Metric</Label>
             <Select value={metric} onValueChange={setMetric}>
               <SelectTrigger data-testid="movers-metric" className="h-9 rounded-sm border-2"><SelectValue /></SelectTrigger>
-              <SelectContent>{METRICS.map((m) => <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{METRICS.filter((m) => seesMoney || !m.money).map((m) => <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>

@@ -1,10 +1,13 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
+import json
 import os
 import logging
 import re
@@ -130,11 +133,65 @@ async def require_auth(request: Request, cred: Optional[HTTPAuthorizationCredent
     # enough to keep a viewer read-only - including on endpoints added later.
     if user["role"] == "viewer" and request.method not in READ_METHODS:
         raise HTTPException(403, "Your account can only view. Ask an admin for edit access.")
-    if user["role"] == "salesman":
-        route = getattr(request.scope.get("route"), "path", "")
-        if (request.method, route) not in SALESMAN_ROUTES:
-            raise HTTPException(403, "Your account is for entering orders and expenses only")
+    route = getattr(request.scope.get("route"), "path", "")
+    if user["role"] == "salesman" and (request.method, route) not in SALESMAN_ROUTES:
+        raise HTTPException(403, "Your account is for entering orders and expenses only")
+    if not sees_money(user):
+        if route == "/api/backup":
+            # the whole database, prices and all
+            raise HTTPException(403, "Only an admin or editor can download a backup")
+        # Read by MoneyGuardRoute once the endpoint has answered. A salesman's
+        # own expense vouchers are the exception: he types those amounts in.
+        request.state.hide_money = not (user["role"] == "salesman" and route in SALESMAN_OWN_MONEY)
     return user
+
+
+# Who may see rates, amounts and values. Everyone else sees quantities only.
+MONEY_ROLES = {"admin", "editor"}
+SALESMAN_OWN_MONEY = {"/api/expenses", "/api/expenses/{expense_id}"}
+
+
+def sees_money(user):
+    return (user or {}).get("role") in MONEY_ROLES
+
+
+def is_money_key(key):
+    """Every money field the API returns, by name. Deliberately broad - a
+    quantity mistaken for money is a missing number on a viewer's screen; money
+    mistaken for a quantity is a price shown to someone who should not see it."""
+    return (
+        key in {"rate", "amount", "value", "total", "net", "expense", "by_head"}
+        or key.endswith(("_value", "_amount", "_rate", "_pct"))
+    )
+
+
+def strip_money(data):
+    if isinstance(data, dict):
+        return {k: strip_money(v) for k, v in data.items() if not is_money_key(k)}
+    if isinstance(data, list):
+        return [strip_money(v) for v in data]
+    return data
+
+
+class MoneyGuardRoute(APIRoute):
+    """Takes money out of every JSON answer for a login that may not see it.
+
+    Done here, on the way out, rather than in each endpoint, so an endpoint
+    added later is covered without anyone remembering to - the same reason the
+    login check sits on the router."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def guarded(request: Request):
+            response = await handler(request)
+            if getattr(request.state, "hide_money", False) and response.media_type == "application/json":
+                headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+                return JSONResponse(strip_money(json.loads(response.body)), status_code=response.status_code,
+                                    headers=headers, background=response.background)
+            return response
+
+        return guarded
 
 
 def is_salesman(user):
@@ -165,6 +222,17 @@ async def salesman_rules(doc, user, existing=None):
         doc["salesman_id"] = doc["line_id"] = None
 
 
+async def salesman_order_rates(doc, existing=None):
+    """A salesman cannot see rates, so whatever rate he sent is ignored. A brand
+    already on the order keeps the rate the office gave it; anything new takes
+    the brand's rate from Masters - which is all an order rate is anyway."""
+    brand_rates = {b["id"]: b.get("rate") or 0
+                   for b in await fetch_all(db.brands.find({}, {"_id": 0, "id": 1, "rate": 1}), "brands")}
+    kept = {it["brand_id"]: it.get("rate") or 0 for it in (existing or {}).get("items", [])}
+    for it in doc.get("items", []):
+        it["rate"] = kept.get(it["brand_id"], brand_rates.get(it["brand_id"], 0))
+
+
 async def require_admin(user: dict = Depends(require_auth)):
     if user["role"] != "admin":
         raise HTTPException(403, "Only an admin can manage users")
@@ -174,7 +242,7 @@ async def require_admin(user: dict = Depends(require_auth)):
 # public: login and the health check Render pings
 auth_router = APIRouter(prefix="/api")
 # everything else - guarded at the router, not per endpoint
-api_router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
+api_router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)], route_class=MoneyGuardRoute)
 
 MASTER_TYPES = {
     "customers": "customers",
@@ -352,6 +420,12 @@ class MasterUpdate(BaseModel):
 
 class BulkIds(BaseModel):
     ids: List[str] = []
+
+
+class MapPlaceIn(BaseModel):
+    # a Census 2011 sub-district code, "outside" for a shop outside Madhya
+    # Pradesh, or null to go back to matching the city name automatically
+    place: Optional[str] = None
 
 
 class LoginIn(BaseModel):
@@ -721,6 +795,11 @@ async def update_master(mtype: str, mid: str, body: MasterUpdate):
         if not city:
             raise HTTPException(400, "City is required for customers")
         update["city"] = city
+        # A place picked for the map belongs to the old city name - a moved
+        # shop must be matched again, not left pinned where it used to be.
+        old = await db.customers.find_one({"id": mid}, {"_id": 0, "city": 1})
+        if old and (old.get("city") or "").strip().lower() != city.lower():
+            update["map_place"] = None
     if mtype == "brands":
         update["rate"] = float(body.rate) if body.rate is not None else 0
     if mtype == "lines":
@@ -778,6 +857,7 @@ async def create_sale_order(body: SaleOrderIn, user: dict = Depends(require_auth
     doc = body.model_dump()
     if is_salesman(user):
         await salesman_rules(doc, user)
+        await salesman_order_rates(doc)
     doc["id"] = oid
     doc["created_by"] = user["id"]
     doc["created_at"] = now_iso()
@@ -796,6 +876,7 @@ async def update_sale_order(order_id: str, body: SaleOrderIn, user: dict = Depen
     doc = body.model_dump()
     if is_salesman(user):
         await salesman_rules(doc, user, existing)
+        await salesman_order_rates(doc, existing)
         await salesman_may_change_order(order_id, user)
     doc["id"] = new_id
     # The PUT replaces the whole document, so who entered it has to be carried over.
@@ -1379,6 +1460,25 @@ async def reports():
     return {"rows": rows}
 
 
+# ---------- Customers on the map ----------
+# The Map page matches each customer's typed city to a Madhya Pradesh
+# sub-district by itself (frontend/src/lib/mpMap.js). This stores the answer
+# somebody gave when it could not - one pick per shop, remembered. Writes, so
+# viewers are refused by method and salesmen by SALESMAN_ROUTES.
+MAP_PLACE_RE = re.compile(r"^\d{5}$")
+
+
+@api_router.put("/customers/{customer_id}/map-place")
+async def set_map_place(customer_id: str, body: MapPlaceIn):
+    place = (body.place or "").strip() or None
+    if place is not None and place != "outside" and not MAP_PLACE_RE.match(place):
+        raise HTTPException(400, "Pick a sub-district from the list")
+    res = await db.customers.update_one({"id": customer_id}, {"$set": {"map_place": place}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "That customer no longer exists - refresh the page")
+    return {"id": customer_id, "map_place": place}
+
+
 # ---------- Customers overview & history ----------
 @api_router.get("/customers")
 async def customers_overview():
@@ -1462,7 +1562,7 @@ async def customer_history(customer_id: str):
                 "dispatch_date": d.get("dispatch_date"),
                 "created_at": d.get("created_at"),
                 "items": items,
-                "total": sum(it["qty"] for it in items),
+                "total_qty": sum(it["qty"] for it in items),
                 "value": sum(priced) if priced else None,
             })
     timeline.sort(key=lambda x: (x.get("dispatch_date") or x.get("created_at") or ""), reverse=True)

@@ -24,6 +24,8 @@ const pages = {
   Users: () => import("@/pages/Users"),
   MyOrders: () => import("@/pages/MyOrders"),
   MyExpenses: () => import("@/pages/MyExpenses"),
+  MyReports: () => import("@/pages/MyReports"),
+  MapView: () => import("@/pages/MapView"),
 };
 const Dashboard = lazy(pages.Dashboard);
 const SaleOrders = lazy(pages.SaleOrders);
@@ -40,6 +42,8 @@ const BrandHistory = lazy(pages.BrandHistory);
 const Users = lazy(pages.Users);
 const MyOrders = lazy(pages.MyOrders);
 const MyExpenses = lazy(pages.MyExpenses);
+const MyReports = lazy(pages.MyReports);
+const MapView = lazy(pages.MapView);
 
 function App() {
   useEffect(() => {
@@ -60,9 +64,9 @@ function App() {
 }
 
 function AppRoutes() {
-  const { isSalesman } = useAuth();
+  const { isSalesman, seesMoney } = useAuth();
 
-  // A salesman gets an app of his own: two screens, and any other address
+  // A salesman gets an app of his own: four screens, and any other address
   // lands back on the first. The server refuses him everything else anyway;
   // this just means he never meets a page that cannot load.
   if (isSalesman) {
@@ -71,6 +75,8 @@ function AppRoutes() {
         <Route path="/" element={<Layout />}>
           <Route index element={<MyOrders />} />
           <Route path="my-expenses" element={<MyExpenses />} />
+          <Route path="my-reports" element={<MyReports />} />
+          <Route path="my-map" element={<MapView />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
@@ -89,8 +95,9 @@ function AppRoutes() {
         <Route path="brands" element={<BrandsList />} />
         <Route path="brands/:id" element={<BrandHistory />} />
         <Route path="reports" element={<Reports />} />
-        <Route path="expenses" element={<Expenses />} />
+        <Route path="expenses" element={seesMoney ? <Expenses /> : <Navigate to="/" replace />} />
         <Route path="compare" element={<Compare />} />
+        <Route path="map" element={<MapView />} />
         <Route path="masters" element={<Masters />} />
         <Route path="users" element={<Users />} />
       </Route>
