@@ -1,8 +1,8 @@
 import "@/App.css";
 import { lazy, useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
-import { AuthProvider } from "@/context/Auth";
+import { AuthProvider, useAuth } from "@/context/Auth";
 import { Layout } from "@/components/Layout";
 
 // Each page is its own chunk, so the first visit downloads only the page it
@@ -21,6 +21,9 @@ const pages = {
   CustomerHistory: () => import("@/pages/CustomerHistory"),
   BrandsList: () => import("@/pages/BrandsList"),
   BrandHistory: () => import("@/pages/BrandHistory"),
+  Users: () => import("@/pages/Users"),
+  MyOrders: () => import("@/pages/MyOrders"),
+  MyExpenses: () => import("@/pages/MyExpenses"),
 };
 const Dashboard = lazy(pages.Dashboard);
 const SaleOrders = lazy(pages.SaleOrders);
@@ -34,6 +37,9 @@ const CustomersList = lazy(pages.CustomersList);
 const CustomerHistory = lazy(pages.CustomerHistory);
 const BrandsList = lazy(pages.BrandsList);
 const BrandHistory = lazy(pages.BrandHistory);
+const Users = lazy(pages.Users);
+const MyOrders = lazy(pages.MyOrders);
+const MyExpenses = lazy(pages.MyExpenses);
 
 function App() {
   useEffect(() => {
@@ -45,26 +51,50 @@ function App() {
     <div className="App">
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="sale-orders" element={<SaleOrders />} />
-              <Route path="orders" element={<Orders />} />
-              <Route path="dispatch-orders" element={<DispatchOrders />} />
-              <Route path="customers" element={<CustomersList />} />
-              <Route path="customers/:id" element={<CustomerHistory />} />
-              <Route path="brands" element={<BrandsList />} />
-              <Route path="brands/:id" element={<BrandHistory />} />
-              <Route path="reports" element={<Reports />} />
-              <Route path="expenses" element={<Expenses />} />
-              <Route path="compare" element={<Compare />} />
-              <Route path="masters" element={<Masters />} />
-            </Route>
-          </Routes>
+          <AppRoutes />
         </BrowserRouter>
         <Toaster position="top-right" richColors />
       </AuthProvider>
     </div>
+  );
+}
+
+function AppRoutes() {
+  const { isSalesman } = useAuth();
+
+  // A salesman gets an app of his own: two screens, and any other address
+  // lands back on the first. The server refuses him everything else anyway;
+  // this just means he never meets a page that cannot load.
+  if (isSalesman) {
+    return (
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<MyOrders />} />
+          <Route path="my-expenses" element={<MyExpenses />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<Layout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="sale-orders" element={<SaleOrders />} />
+        <Route path="orders" element={<Orders />} />
+        <Route path="dispatch-orders" element={<DispatchOrders />} />
+        <Route path="customers" element={<CustomersList />} />
+        <Route path="customers/:id" element={<CustomerHistory />} />
+        <Route path="brands" element={<BrandsList />} />
+        <Route path="brands/:id" element={<BrandHistory />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="expenses" element={<Expenses />} />
+        <Route path="compare" element={<Compare />} />
+        <Route path="masters" element={<Masters />} />
+        <Route path="users" element={<Users />} />
+      </Route>
+    </Routes>
   );
 }
 

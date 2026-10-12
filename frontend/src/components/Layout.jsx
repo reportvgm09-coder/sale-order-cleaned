@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/Auth";
 import { Loader } from "@/components/Loader";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, ScrollText, Truck, Database, BookMarked, BarChart3, Building2, GitCompareArrows, LogOut, UserRound, Wallet, Table, Tag } from "lucide-react";
+import { LayoutGrid, ScrollText, Truck, Database, BookMarked, BarChart3, Building2, GitCompareArrows, LogOut, UserRound, Wallet, Table, Tag, ShieldCheck } from "lucide-react";
 
 const tabs = [
   { to: "/", label: "Dashboard", icon: LayoutGrid, testid: "nav-dashboard", end: true },
@@ -16,11 +16,19 @@ const tabs = [
   { to: "/expenses", label: "Expenses", icon: Wallet, testid: "nav-expenses" },
   { to: "/compare", label: "Compare", icon: GitCompareArrows, testid: "nav-compare" },
   { to: "/masters", label: "Masters", icon: Database, testid: "nav-masters" },
+  { to: "/users", label: "Users", icon: ShieldCheck, testid: "nav-users", adminOnly: true },
+];
+
+// A salesman's whole app - see AppRoutes.
+const salesmanTabs = [
+  { to: "/", label: "Orders", icon: ScrollText, testid: "nav-my-orders", end: true },
+  { to: "/my-expenses", label: "Expenses", icon: Wallet, testid: "nav-my-expenses" },
 ];
 
 export const Layout = () => {
   const loc = useLocation();
-  const { user, signOut } = useAuth();
+  const { user, role, isAdmin, isSalesman, signOut } = useAuth();
+  const shown = isSalesman ? salesmanTabs : tabs.filter((t) => !t.adminOnly || isAdmin);
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border bg-white no-print">
@@ -38,6 +46,11 @@ export const Layout = () => {
             <div className="flex items-center gap-3">
               <span className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex" data-testid="signed-in-as">
                 <UserRound className="h-3.5 w-3.5" /> {user}
+                {role && (
+                  <span data-testid="signed-in-role" className="rounded-sm border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+                    {role}
+                  </span>
+                )}
               </span>
               <Button data-testid="sign-out-btn" variant="outline" size="sm" onClick={signOut} className="gap-1 rounded-sm">
                 <LogOut className="h-4 w-4" /> Sign Out
@@ -45,7 +58,7 @@ export const Layout = () => {
             </div>
           </div>
           <nav className="flex gap-1 -mb-px">
-            {tabs.map((t) => {
+            {shown.map((t) => {
               const Icon = t.icon;
               const active = t.end ? loc.pathname === "/" : loc.pathname.startsWith(t.to);
               return (

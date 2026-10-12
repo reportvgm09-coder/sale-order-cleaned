@@ -12,7 +12,7 @@ Orders are taken at **exhibitions** or by **door-to-door salesmen**, in pieces,
 against **brands**, grouped by **season**. Goods are dispatched in parts over
 time, so "ordered" and "dispatched" are always separate numbers.
 
-Single owner-operator. One login. Money is in INR.
+One owner, plus any staff accounts they add on the Users page. Money is in INR.
 
 ---
 
@@ -307,6 +307,66 @@ The guard is on the **router** (`dependencies=[Depends(require_auth)]`), so a
 new endpoint is protected by default. Only `/api/auth/login`, `/api/` and `/`
 are public — there is a whitelist test asserting nothing else is.
 
+### Users and roles: the owner lives in the environment, everyone else in Mongo
+
+The `APP_USERNAME` / `APP_PASSWORD_HASH` account is the **owner**: always an
+admin, listed first on the Users page, and not editable or deletable from the
+app. That is what makes the page safe - no amount of demoting or deleting can
+lock everybody out, and the "refuse to start without a password" guard still
+means something. Other accounts are in the `users` collection.
+
+| role | can |
+|---|---|
+| `admin` | everything, including the Users page |
+| `editor` | read and change all data |
+| `viewer` | read only |
+| `salesman` | his own screens: enter orders and expenses, see only his own |
+
+- **Viewers are stopped by HTTP method** in `require_auth`: any POST, PUT or
+  DELETE is refused. Every write here is one of those, so a new endpoint is
+  read-only for viewers without anyone remembering. Do not add a POST that only
+  reads, or viewers lose it.
+- **The role is read from the database on every request**, not trusted from
+  the token, so a demotion or deletion bites on the next click rather than when
+  a 30-day token runs out. Owner tokens carry no `uid` and skip the lookup -
+  which is also why tokens issued before users existed still work.
+- **A password change bumps `token_version`**, which ends every session that
+  signed in with the old one. A rename does not.
+- An admin cannot change their own role or delete themselves.
+- `users` is **not** in `BACKUP_COLLECTIONS`: backup files get copied around,
+  and password hashes should not travel with them. A restore keeps the owner
+  login (it is in the environment) but the other accounts must be re-added.
+- The frontend hides the Users tab from non-admins, but that is cosmetic; the
+  server checks `require_admin` on every `/users` route.
+
+### The salesman role is a different app, fenced on the server
+
+A salesman login gets two screens of its own - `pages/MyOrders.jsx` and
+`pages/MyExpenses.jsx` - and `AppRoutes` sends any other address back to the
+first. Hiding pages is not the protection, though. On the server:
+
+- **`SALESMAN_ROUTES` is an allowlist** of (method, route template) checked in
+  `require_auth`. A report or endpoint added later is closed to salesmen until
+  someone adds it there on purpose. It matches the *template*
+  (`/api/sale-orders/{order_id}`), which FastAPI puts on the request as
+  `scope["route"]`.
+- **Each login is linked to a salesman in Masters** (`users.salesman_id`), and
+  the server refuses the role without a valid one. `salesman_rules()` forces
+  his door-to-door entries onto that salesman and his own lines, whatever the
+  browser sent. Exhibition entries are allowed - salesmen staff stalls too.
+- **He sees only what he entered.** Orders and expense vouchers now carry
+  `created_by` (the user id, or `owner`). Entries from before this have none,
+  so they are invisible to every salesman, which is the safe direction. Both
+  PUTs replace the whole document, so they **copy `created_by` across** - drop
+  that and an office edit would take the order away from the man who took it.
+- **An edit by him keeps `state` and `dispatch_date`.** Those are the office's
+  decisions, and his screen has no fields for them.
+- **Once anything has been dispatched, the order is the office's.** He can no
+  longer edit or delete it (`salesman_may_change_order`).
+- **The only masters he can add** are customers and his own lines.
+- He sees no money beyond his own orders' values: no dashboard, no reports, no
+  expense summary, no dispatch figures beyond "4 of 10 sent".
+
 ---
 
 ## Gotchas
@@ -368,7 +428,10 @@ directly (the auth guard is on the router, not on them).
 - **Dashboard fires ~6 database queries sequentially.** Running them together
   would cut its wait to roughly one round trip. Biggest easy win.
 - **No pagination anywhere.** Fine now, warns at 20k documents.
-- **Single user.** No roles, no audit trail of who changed what.
+- **No audit trail** of who changed what - roles exist, but orders do not record
+  which user saved them.
+- **Viewers still see the add / edit / delete buttons.** The server refuses the
+  action with a plain message; the buttons are not yet hidden per role.
 - **Order edits overwrite** with no history.
 - **Dispatches can be deleted but not edited.**
 - When Mongo is unreachable at boot, the index loop logs the same error 17

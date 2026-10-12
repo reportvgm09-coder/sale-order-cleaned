@@ -20,7 +20,7 @@ import { Plus, X, Check, ChevronsUpDown, Save, Zap } from "lucide-react";
 // a random point so two separate sessions don't march in step either. The
 // database also refuses a duplicate id outright, as a last line of defence.
 let seq = Math.floor(Math.random() * 46656);
-const genOrderId = () => {
+export const genOrderId = () => {
   seq = (seq + 1) % 46656;
   const stamp = Date.now().toString(36).toUpperCase().slice(-3);
   return `SO-${stamp}${seq.toString(36).toUpperCase().padStart(3, "0")}`;
@@ -56,8 +56,9 @@ const MASTER_LABEL = {
  *
  * The Add button sits below the list rather than only appearing when nothing
  * matches: "Raj" needs adding just as often when "Rajesh" is already there.
+ * Leave out onCreate for a list the person cannot add to.
  */
-function MasterPicker({
+export function MasterPicker({
   items,
   value,
   onChange,
@@ -129,7 +130,7 @@ function MasterPicker({
             </CommandGroup>
           </CommandList>
         </Command>
-        <div className="border-t border-border p-1">
+        {onCreate && <div className="border-t border-border p-1">
           <button
             type="button"
             data-testid={`${testid}-create`}
@@ -139,7 +140,7 @@ function MasterPicker({
             <Plus className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{query ? `Add “${query}”` : `Add new ${addLabel}`}</span>
           </button>
-        </div>
+        </div>}
       </PopoverContent>
     </Popover>
   );

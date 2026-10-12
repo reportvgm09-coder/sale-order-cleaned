@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -69,7 +69,36 @@ if _missing:
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-async def require_auth(cred: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+# admin: everything, including managing users. editor: add and change data.
+# viewer: read only. salesman: enters orders and expenses, and sees only his
+# own. The account in APP_USERNAME / APP_PASSWORD_HASH is the owner - always an
+# admin and not editable from the app - so no amount of deleting or demoting
+# on the Users page can lock everybody out.
+Role = Literal["admin", "editor", "viewer", "salesman"]
+READ_METHODS = {"GET", "HEAD", "OPTIONS"}
+OWNER_ID = "owner"
+
+# Everything a salesman login may reach, as (method, route template). An
+# allowlist rather than a blocklist, so a report added later is closed to
+# salesmen until somebody decides otherwise. What each of these lets him see
+# or change is narrowed again inside the endpoint.
+SALESMAN_ROUTES = {
+    ("GET", "/api/auth/me"),
+    ("GET", "/api/masters/{mtype}"),
+    ("POST", "/api/masters/{mtype}"),
+    ("GET", "/api/sale-orders"),
+    ("POST", "/api/sale-orders"),
+    ("PUT", "/api/sale-orders/{order_id}"),
+    ("DELETE", "/api/sale-orders/{order_id}"),
+    ("GET", "/api/expenses"),
+    ("POST", "/api/expenses"),
+    ("PUT", "/api/expenses/{expense_id}"),
+    ("DELETE", "/api/expenses/{expense_id}"),
+}
+SALESMAN_MASTERS = {"customers", "lines"}
+
+
+async def require_auth(request: Request, cred: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
     """Applied to the whole API router, so a new endpoint is protected by default
     rather than by remembering to protect it."""
     if cred is None:
@@ -80,7 +109,66 @@ async def require_auth(cred: Optional[HTTPAuthorizationCredentials] = Depends(be
         raise HTTPException(401, "Your session has expired - please sign in again")
     except jwt.PyJWTError:
         raise HTTPException(401, "Sign in to continue")
-    return payload.get("sub")
+    if "uid" not in payload:
+        # The owner - including tokens issued before there were other users,
+        # so nobody is signed out by this change. Renaming APP_USERNAME ends
+        # the old name's sessions.
+        if payload.get("sub") != AUTH_USERNAME:
+            raise HTTPException(401, "Sign in to continue")
+        user = {"id": OWNER_ID, "username": AUTH_USERNAME, "role": "admin", "owner": True, "salesman_id": None}
+    else:
+        # Looked up on every request rather than trusted from the token, so a
+        # deleted user or a changed role takes effect at once, not in 30 days.
+        doc = await db.users.find_one({"id": payload["uid"]}, {"_id": 0, "password_hash": 0})
+        if not doc:
+            raise HTTPException(401, "This account has been removed - ask an admin if you need access")
+        if doc.get("token_version", 0) != payload.get("tv", 0):
+            raise HTTPException(401, "Your password was changed - please sign in again")
+        user = {"id": doc["id"], "username": doc["username"], "role": doc.get("role", "viewer"), "owner": False,
+                "salesman_id": doc.get("salesman_id")}
+    # Every write in this API is a POST, PUT or DELETE, so the method alone is
+    # enough to keep a viewer read-only - including on endpoints added later.
+    if user["role"] == "viewer" and request.method not in READ_METHODS:
+        raise HTTPException(403, "Your account can only view. Ask an admin for edit access.")
+    if user["role"] == "salesman":
+        route = getattr(request.scope.get("route"), "path", "")
+        if (request.method, route) not in SALESMAN_ROUTES:
+            raise HTTPException(403, "Your account is for entering orders and expenses only")
+    return user
+
+
+def is_salesman(user):
+    return (user or {}).get("role") == "salesman"
+
+
+async def salesman_rules(doc, user, existing=None):
+    """A salesman's entry is always his own: stamped with his login, and when it
+    is door-to-door it is him, on one of his own lines. An edit keeps what only
+    the office decides - the order's state and its dispatch date."""
+    if existing is not None:
+        if existing.get("created_by") != user["id"]:
+            raise HTTPException(404, "That entry is not one of yours")
+        for k in ("state", "dispatch_date"):
+            if k in existing:
+                doc[k] = existing[k]
+    elif "state" in doc:
+        doc["state"] = "open"
+    if doc.get("event_type") == "door_to_door":
+        if not await db.salesmen.find_one({"id": user["salesman_id"]}):
+            raise HTTPException(400, "Your salesman record has been removed - ask the office to link your login again")
+        doc["salesman_id"] = user["salesman_id"]
+        if doc.get("line_id"):
+            line = await db.lines.find_one({"id": doc["line_id"]}, {"_id": 0})
+            if not line or line.get(LINE_OWNER) != user["salesman_id"]:
+                raise HTTPException(400, "That line is not one of yours - pick one of your own")
+    else:
+        doc["salesman_id"] = doc["line_id"] = None
+
+
+async def require_admin(user: dict = Depends(require_auth)):
+    if user["role"] != "admin":
+        raise HTTPException(403, "Only an admin can manage users")
+    return user
 
 
 # public: login and the health check Render pings
@@ -147,6 +235,8 @@ INDEXES = [
     ("expenses", "expense_date", False),
     ("expenses", "created_at", False),
     ("lines", LINE_OWNER, False),
+    ("users", "id", True),
+    ("users", "username_lc", True),
 ] + [(coll, field, field == "id") for coll in MASTER_TYPES.values() for field in ("id", "name")]
 
 
@@ -267,6 +357,22 @@ class BulkIds(BaseModel):
 class LoginIn(BaseModel):
     username: str
     password: str
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: Role = "editor"
+    # which salesman in Masters this login is - required for the salesman role
+    salesman_id: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    # blank or missing leaves the password as it is
+    password: Optional[str] = None
+    role: Optional[Role] = None
+    salesman_id: Optional[str] = None
 
 
 class LineItem(BaseModel):
@@ -516,9 +622,15 @@ async def list_masters(mtype: str):
 
 
 @api_router.post("/masters/{mtype}")
-async def create_master(mtype: str, body: MasterCreate):
+async def create_master(mtype: str, body: MasterCreate, user: dict = Depends(require_auth)):
     if mtype not in MASTER_TYPES:
         raise HTTPException(404, "Unknown master type")
+    if is_salesman(user):
+        # a new shop met on the road, or a new trip of his own - nothing else
+        if mtype not in SALESMAN_MASTERS:
+            raise HTTPException(403, "Ask the office to add this for you")
+        if mtype == "lines":
+            body.salesman_id = user["salesman_id"]
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "Name required")
@@ -644,35 +756,50 @@ async def delete_master(mtype: str, mid: str):
 
 # ---------- Sale Orders ----------
 @api_router.get("/sale-orders")
-async def list_sale_orders():
-    orders = await fetch_all(db.sale_orders.find({}, {"_id": 0}).sort("created_at", -1), "sale_orders")
+async def list_sale_orders(user: dict = Depends(require_auth)):
+    query = {"created_by": user["id"]} if is_salesman(user) else {}
+    orders = await fetch_all(db.sale_orders.find(query, {"_id": 0}).sort("created_at", -1), "sale_orders")
     return await enrich_orders(orders)
 
 
+async def salesman_may_change_order(order_id, user):
+    """Once goods have gone out against an order, changing it is the office's call."""
+    if is_salesman(user) and await db.dispatch_orders.find_one({"sale_order_id": order_id}):
+        raise HTTPException(400, "Goods have already been dispatched on this order - ask the office to change it")
+
+
 @api_router.post("/sale-orders")
-async def create_sale_order(body: SaleOrderIn):
+async def create_sale_order(body: SaleOrderIn, user: dict = Depends(require_auth)):
     oid = body.id.strip()
     if not oid:
         raise HTTPException(400, "Sale Order ID required")
     if await db.sale_orders.find_one({"id": oid}):
         raise HTTPException(400, f"Sale Order '{oid}' already exists")
     doc = body.model_dump()
+    if is_salesman(user):
+        await salesman_rules(doc, user)
     doc["id"] = oid
+    doc["created_by"] = user["id"]
     doc["created_at"] = now_iso()
     await db.sale_orders.insert_one(dict(doc))
     return await enrich_order({k: v for k, v in doc.items() if k != "_id"})
 
 
 @api_router.put("/sale-orders/{order_id}")
-async def update_sale_order(order_id: str, body: SaleOrderIn):
-    existing = await db.sale_orders.find_one({"id": order_id})
+async def update_sale_order(order_id: str, body: SaleOrderIn, user: dict = Depends(require_auth)):
+    existing = await db.sale_orders.find_one({"id": order_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Sale order not found")
     new_id = body.id.strip()
     if new_id != order_id and await db.sale_orders.find_one({"id": new_id}):
         raise HTTPException(400, f"Sale Order '{new_id}' already exists")
     doc = body.model_dump()
+    if is_salesman(user):
+        await salesman_rules(doc, user, existing)
+        await salesman_may_change_order(order_id, user)
     doc["id"] = new_id
+    # The PUT replaces the whole document, so who entered it has to be carried over.
+    doc["created_by"] = existing.get("created_by")
     doc["created_at"] = existing.get("created_at", now_iso())
     await db.sale_orders.delete_one({"id": order_id})
     await db.sale_orders.insert_one(dict(doc))
@@ -721,14 +848,19 @@ async def bulk_delete_sale_orders(body: BulkIds):
 
 
 @api_router.delete("/sale-orders/{order_id}")
-async def delete_sale_order(order_id: str):
+async def delete_sale_order(order_id: str, user: dict = Depends(require_auth)):
+    if is_salesman(user):
+        mine = await db.sale_orders.find_one({"id": order_id, "created_by": user["id"]})
+        if not mine:
+            raise HTTPException(404, "That entry is not one of yours")
+        await salesman_may_change_order(order_id, user)
     await db.sale_orders.delete_one({"id": order_id})
     await db.dispatch_orders.delete_many({"sale_order_id": order_id})
     return {"ok": True}
 
 
 @api_router.post("/sale-orders/bulk")
-async def bulk_sale_orders(body: SaleOrderBulk):
+async def bulk_sale_orders(body: SaleOrderBulk, user: dict = Depends(require_auth)):
     added, skipped = 0, 0
     for o in body.orders:
         oid = o.id.strip()
@@ -737,6 +869,7 @@ async def bulk_sale_orders(body: SaleOrderBulk):
             continue
         doc = o.model_dump()
         doc["id"] = oid
+        doc["created_by"] = user["id"]
         doc["created_at"] = now_iso()
         await db.sale_orders.insert_one(dict(doc))
         added += 1
@@ -862,11 +995,12 @@ def in_range(date_str, start, end):
 
 
 @api_router.get("/expenses")
-async def list_expenses():
+async def list_expenses(user: dict = Depends(require_auth)):
+    query = {"created_by": user["id"]} if is_salesman(user) else {}
     heads, exhibitions, salesmen, seasons, lines, docs = await asyncio.gather(
         get_name_map("expense_heads"), get_name_map("exhibitions"), get_name_map("salesmen"),
         get_name_map("seasons"), get_name_map("lines"),
-        fetch_all(db.expenses.find({}, {"_id": 0}).sort("expense_date", -1), "expenses"),
+        fetch_all(db.expenses.find(query, {"_id": 0}).sort("expense_date", -1), "expenses"),
     )
     return [
         {
@@ -899,21 +1033,27 @@ def expense_doc(body: "ExpenseIn"):
 
 
 @api_router.post("/expenses")
-async def create_expense(body: ExpenseIn):
+async def create_expense(body: ExpenseIn, user: dict = Depends(require_auth)):
     doc = expense_doc(body)
+    if is_salesman(user):
+        await salesman_rules(doc, user)
     doc["id"] = gen_id("EXP")
+    doc["created_by"] = user["id"]
     doc["created_at"] = now_iso()
     await db.expenses.insert_one(dict(doc))
     return {k: v for k, v in doc.items() if k != "_id"}
 
 
 @api_router.put("/expenses/{expense_id}")
-async def update_expense(expense_id: str, body: ExpenseIn):
+async def update_expense(expense_id: str, body: ExpenseIn, user: dict = Depends(require_auth)):
     existing = await db.expenses.find_one({"id": expense_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Expense not found")
     doc = expense_doc(body)
+    if is_salesman(user):
+        await salesman_rules(doc, user, existing)
     doc["id"] = expense_id
+    doc["created_by"] = existing.get("created_by")
     doc["created_at"] = existing.get("created_at", now_iso())
     await db.expenses.delete_one({"id": expense_id})
     await db.expenses.insert_one(dict(doc))
@@ -927,7 +1067,9 @@ async def bulk_delete_expenses(body: BulkIds):
 
 
 @api_router.delete("/expenses/{expense_id}")
-async def delete_expense(expense_id: str):
+async def delete_expense(expense_id: str, user: dict = Depends(require_auth)):
+    if is_salesman(user) and not await db.expenses.find_one({"id": expense_id, "created_by": user["id"]}):
+        raise HTTPException(404, "That entry is not one of yours")
     await db.expenses.delete_one({"id": expense_id})
     return {"ok": True}
 
@@ -1505,26 +1647,151 @@ async def backup():
 # ---------- Auth endpoints ----------
 @auth_router.post("/auth/login")
 async def login(body: LoginIn):
-    name_ok = secrets.compare_digest((body.username or "").strip().lower(), AUTH_USERNAME.lower())
-    # Always run the hash check, even when the username is wrong, so response
+    uname = (body.username or "").strip().lower()
+    is_owner = secrets.compare_digest(uname, AUTH_USERNAME.lower())
+    doc = None if is_owner else await db.users.find_one({"username_lc": uname}, {"_id": 0})
+    # Always run a hash check, even when the username is unknown, so response
     # time doesn't reveal whether a username exists.
+    stored = doc["password_hash"] if doc else AUTH_PASSWORD_HASH
     try:
-        pass_ok = bcrypt.checkpw((body.password or "").encode("utf-8"), AUTH_PASSWORD_HASH.encode("utf-8"))
+        pass_ok = bcrypt.checkpw((body.password or "").encode("utf-8"), stored.encode("utf-8"))
     except Exception:
         pass_ok = False
-    if not (name_ok and pass_ok):
+    if not ((is_owner or doc) and pass_ok):
         logger.warning("Failed sign-in attempt for username %r", (body.username or "")[:40])
         raise HTTPException(401, "Wrong username or password")
     expires = datetime.now(timezone.utc) + timedelta(days=TOKEN_DAYS)
-    token = jwt.encode({"sub": AUTH_USERNAME, "exp": expires}, JWT_SECRET, algorithm="HS256")
-    logger.info("Signed in as %s", AUTH_USERNAME)
-    return {"token": token, "username": AUTH_USERNAME, "expires_at": expires.isoformat()}
+    if is_owner:
+        claims, username, role, sid = {"sub": AUTH_USERNAME}, AUTH_USERNAME, "admin", None
+    else:
+        claims = {"sub": doc["username"], "uid": doc["id"], "tv": doc.get("token_version", 0)}
+        username, role, sid = doc["username"], doc.get("role", "viewer"), doc.get("salesman_id")
+    token = jwt.encode({**claims, "exp": expires}, JWT_SECRET, algorithm="HS256")
+    logger.info("Signed in as %s", username)
+    return {"token": token, "username": username, "role": role, "owner": is_owner, "salesman_id": sid,
+            "expires_at": expires.isoformat()}
 
 
 @api_router.get("/auth/me")
-async def whoami(user: str = Depends(require_auth)):
+async def whoami(user: dict = Depends(require_auth)):
     """Used by the browser on load to check a stored token is still good."""
-    return {"username": user}
+    return {"username": user["username"], "role": user["role"], "owner": user["owner"],
+            "salesman_id": user["salesman_id"]}
+
+
+# ---------- Users ----------
+# Kept out of BACKUP_COLLECTIONS on purpose: a backup file gets emailed and
+# copied around, and password hashes have no business travelling with it.
+USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,40}$")
+MIN_PASSWORD = 8
+
+
+def clean_username(raw):
+    name = (raw or "").strip()
+    if not USERNAME_RE.match(name):
+        raise HTTPException(400, "Usernames need 3 to 40 letters or numbers - dots, dashes and underscores are fine, spaces are not")
+    return name
+
+
+def hash_password(raw):
+    if len(raw or "") < MIN_PASSWORD:
+        raise HTTPException(400, f"Passwords need at least {MIN_PASSWORD} characters")
+    return bcrypt.hashpw(raw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+async def ensure_username_free(name, except_id=None):
+    lc = name.lower()
+    query = {"username_lc": lc, **({"id": {"$ne": except_id}} if except_id else {})}
+    if lc == AUTH_USERNAME.lower() or await db.users.find_one(query):
+        raise HTTPException(409, f"The username '{name}' is already taken - choose another")
+
+
+async def check_salesman_link(role, salesman_id):
+    """A salesman login has to be somebody in Masters, or his door-to-door
+    orders would be credited to nobody. Other roles carry no link."""
+    if role != "salesman":
+        return None
+    if not salesman_id:
+        raise HTTPException(400, "Choose which salesman this login is for")
+    if not await db.salesmen.find_one({"id": salesman_id}):
+        raise HTTPException(400, "That salesman no longer exists - pick another")
+    return salesman_id
+
+
+def public_user(doc):
+    keys = ("id", "username", "role", "salesman_id", "created_at", "updated_at")
+    return {**{k: doc.get(k) for k in keys}, "owner": False}
+
+
+@api_router.get("/users")
+async def list_users(admin: dict = Depends(require_admin)):
+    docs = await fetch_all(db.users.find({}, {"_id": 0, "password_hash": 0}).sort("username_lc", 1), "users")
+    owner = {"id": OWNER_ID, "username": AUTH_USERNAME, "role": "admin", "owner": True,
+             "salesman_id": None, "created_at": None, "updated_at": None}
+    return [owner] + [public_user(d) for d in docs]
+
+
+@api_router.post("/users")
+async def create_user(body: UserCreate, admin: dict = Depends(require_admin)):
+    name = clean_username(body.username)
+    pw_hash = hash_password(body.password)
+    await ensure_username_free(name)
+    sid = await check_salesman_link(body.role, body.salesman_id)
+    doc = {"id": gen_id("USER"), "username": name, "username_lc": name.lower(), "password_hash": pw_hash,
+           "role": body.role, "salesman_id": sid, "token_version": 0,
+           "created_at": now_iso(), "updated_at": now_iso()}
+    await db.users.insert_one(doc)
+    logger.info("%s added user %s (%s)", admin["username"], name, body.role)
+    return public_user(doc)
+
+
+@api_router.put("/users/{uid}")
+async def update_user(uid: str, body: UserUpdate, admin: dict = Depends(require_admin)):
+    if uid == OWNER_ID:
+        raise HTTPException(400, "The owner account is set on the server - change it with set-password.bat, or in Render's Environment settings")
+    doc = await db.users.find_one({"id": uid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "That user no longer exists - refresh the page")
+    changes = {}
+    if body.username is not None and body.username.strip() != doc["username"]:
+        name = clean_username(body.username)
+        await ensure_username_free(name, except_id=uid)
+        changes.update(username=name, username_lc=name.lower())
+    if body.role is not None and body.role != doc.get("role"):
+        # Demoting yourself would throw you off this page halfway through.
+        if uid == admin["id"]:
+            raise HTTPException(400, "You cannot change your own role - ask another admin")
+        changes["role"] = body.role
+    role = changes.get("role", doc.get("role"))
+    sid = body.salesman_id if body.salesman_id is not None else doc.get("salesman_id")
+    sid = await check_salesman_link(role, sid)
+    if sid != doc.get("salesman_id"):
+        changes["salesman_id"] = sid
+    if body.password:
+        changes["password_hash"] = hash_password(body.password)
+        # ends every session that signed in with the old password
+        changes["token_version"] = doc.get("token_version", 0) + 1
+    if changes:
+        changes["updated_at"] = now_iso()
+        await db.users.update_one({"id": uid}, {"$set": changes})
+        what = [k for k in ("username", "role", "salesman_id", "password_hash") if k in changes]
+        logger.info("%s updated user %s: %s", admin["username"], doc["username"],
+                    ", ".join("password" if k == "password_hash" else k for k in what))
+    return public_user({**doc, **changes})
+
+
+@api_router.delete("/users/{uid}")
+async def delete_user(uid: str, admin: dict = Depends(require_admin)):
+    if uid == OWNER_ID:
+        raise HTTPException(400, "The owner account cannot be deleted")
+    if uid == admin["id"]:
+        raise HTTPException(400, "You cannot delete your own account - ask another admin")
+    doc = await db.users.find_one({"id": uid}, {"_id": 0, "username": 1})
+    if not doc:
+        raise HTTPException(404, "That user no longer exists - refresh the page")
+    await db.users.delete_one({"id": uid})
+    logger.info("%s deleted user %s", admin["username"], doc["username"])
+    return {"deleted": 1}
 
 
 @auth_router.get("/")

@@ -51,6 +51,11 @@ export const api = {
   // auth
   login: (username, password) => client.post(`/auth/login`, { username, password }).then((r) => r.data),
   me: () => client.get(`/auth/me`).then((r) => r.data),
+  // users - admins only
+  listUsers: () => client.get(`/users`).then((r) => r.data),
+  createUser: (body) => client.post(`/users`, body).then((r) => r.data),
+  updateUser: (id, body) => client.put(`/users/${id}`, body).then((r) => r.data),
+  deleteUser: (id) => client.delete(`/users/${id}`).then((r) => r.data),
   // masters
   listMasters: (type) => client.get(`/masters/${type}`).then((r) => r.data),
   addMaster: (type, payload) => client.post(`/masters/${type}`, payload).then((r) => r.data),

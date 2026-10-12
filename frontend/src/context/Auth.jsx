@@ -86,6 +86,10 @@ function LoginScreen({ onSignedIn }) {
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [user, setUser] = useState(() => localStorage.getItem(USER_KEY) || "");
+  // { role, salesman_id }. Only decides what the screen offers - the server
+  // checks the role on every request, so editing this in the browser gains
+  // nothing. Not stored: the /me check below fills it before anything renders.
+  const [profile, setProfile] = useState({ role: "", salesman_id: null });
   const [checking, setChecking] = useState(!!localStorage.getItem(TOKEN_KEY));
 
   const signOut = () => {
@@ -94,14 +98,16 @@ export function AuthProvider({ children }) {
     setAuthToken("");
     setToken("");
     setUser("");
+    setProfile({ role: "", salesman_id: null });
   };
 
-  const signIn = ({ token: t, username }) => {
+  const signIn = ({ token: t, username, role, salesman_id }) => {
     localStorage.setItem(TOKEN_KEY, t);
     localStorage.setItem(USER_KEY, username);
     setAuthToken(t);
     setToken(t);
     setUser(username);
+    setProfile({ role, salesman_id });
   };
 
   // Keep axios in step with the token, and drop it the moment the server
@@ -119,6 +125,8 @@ export function AuthProvider({ children }) {
       try {
         const me = await api.me();
         setUser(me.username);
+        setProfile({ role: me.role, salesman_id: me.salesman_id });
+        localStorage.setItem(USER_KEY, me.username);
       } catch {
         signOut();
       } finally {
@@ -141,6 +149,11 @@ export function AuthProvider({ children }) {
     <AuthCtx.Provider
       value={{
         user,
+        role: profile.role,
+        isAdmin: profile.role === "admin",
+        isSalesman: profile.role === "salesman",
+        // the salesman in Masters this login is, for salesman logins
+        salesmanId: profile.salesman_id,
         signOut,
         // Everything behind the login is already authenticated, so this just
         // runs the action. Kept so existing call sites need no changes, and so
