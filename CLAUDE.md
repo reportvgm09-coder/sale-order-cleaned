@@ -27,8 +27,10 @@ MAKING-CHANGES.md Day-to-day "I want to change something" guide.
 render.yaml       Render blueprint: API (web service) + site (static).
 ```
 
-**Data lives in MongoDB Atlas** (free M0). Local and hosted share the same
-cluster, so a test order on localhost is a real order in production.
+**Data lives in MongoDB Atlas** (free M0). A PC that has not been through
+`setup-offline.bat` shares that cluster with the hosted site, so a test order on
+localhost is a real order in production. One that has keeps its own copy and
+syncs it - see "The office PC can run offline" below.
 
 ### Running locally
 
@@ -36,7 +38,7 @@ cluster, so a test order on localhost is a real order in production.
 opens two windows. Frontend on 3000, API on 8000.
 
 Other helpers: `set-password.bat`, `show-hosting-values.bat`, `check-db.bat`,
-`restore-backup.bat`.
+`restore-backup.bat`, `setup-offline.bat`, `sync-now.bat`.
 
 ---
 
@@ -480,6 +482,52 @@ Check any layout change at 375px wide. The rules it follows:
 - **Dialogs** keep a margin from the screen edge and scroll inside themselves
   (set once in `ui/dialog.jsx`).
 
+### The office PC can run offline, and syncs both ways
+
+`setup-offline.bat` (`backend/setup_offline.py`) gives the office PC its own
+MongoDB: `MONGO_URL` becomes `mongodb://localhost:27017` and the Atlas string
+moves to `SYNC_REMOTE_URL`. The old `.env` is kept as `.env.before-offline`,
+which `--undo` puts back. The online site is untouched - it still reads and
+writes Atlas, salesmen included. `backend/sync.py` swaps changes between the
+two: on the office server's startup, every `SYNC_MINUTES` (5) after that, from
+the Sync now button, and from `sync-now.bat`. **Only the office runs it**;
+`SYNC_REMOTE_URL` being set is what makes a server the office copy.
+
+- **Every write is tracked without anyone remembering to.** `db` in
+  `server.py` is a `SyncedDB`: on the collections in `SYNC_COLLECTIONS` it
+  stamps `updated_at` on every insert, update and replace, and leaves a note in
+  `sync_deleted` for every delete. A new endpoint is synced for free - but only
+  if it writes through `db`. `raw_db` is for the sync bookkeeping alone.
+- **Changes are found by `updated_at`, judged by fingerprint.** A run reads each
+  side from 10 minutes before its last run, timed on *that side's* database
+  clock, so a PC clock that is out cannot hide an online change. Whether a side
+  actually changed something is decided against `sync_seen`, the fingerprint
+  from when the two last agreed. Without that, every document a run copied
+  across would come back next time looking like a new edit, and be reported
+  as a clash. A clock put back (a PC that ran fast, then corrected) would
+  leave the mark in the future, so a run that sees that re-reads the whole side.
+- **A clash: the later edit wins, the other copy is kept** in `sync_conflicts`
+  on the office PC. The Sync bar shows the count; the dialog shows each note
+  with the losing copy. Edit vs delete is the same rule - whichever came later.
+- **The same order number typed in on both sides is two orders, not a clash.**
+  The online one becomes `…-2` and takes its own dispatches and photos with it.
+  Not on the very first sync, where nothing has a history to judge by.
+- **Logins sync too** (`users`), since salesmen sign in online and the office
+  adds them at the PC. Two different logins given one username can't both
+  exist; that is noted once, and retried each run until one is renamed.
+  Password hashes are never kept in a clash note.
+- **The office PC never seeds expense heads** - it gets the online ones at the
+  first sync, and seeding its empty database first would add a second set.
+- **Deletes are passed on for a year** (`KEEP_TOMBSTONES`). A PC switched off
+  longer than that would bring back things deleted online meanwhile.
+- **A restore bypasses all of this.** `restore_backup.py` writes straight to
+  Mongo, so nothing it does is stamped. With sync in use, restore into Atlas
+  only, then set the office PC up afresh against it (`--undo`, empty the local
+  database, `setup-offline.bat`).
+- `SyncBar.jsx`, under the header, says how fresh the copy you are looking at
+  is. It shows nothing until a first sync, so a site not using this looks as it
+  did. Salesmen do not get it: `/sync/*` is not in `SALESMAN_ROUTES`.
+
 ## Gotchas
 
 | Thing | Why |
@@ -519,6 +567,12 @@ approach caught real bugs (an order-ID generator that wrapped and collided; a
 The loader was checked the same way: Babel the shipped `.jsx` to CommonJS, stub
 the three hooks and a canvas, and drive `requestAnimationFrame` by hand - which
 is also how the frames were rasterised to PNG to look at the sprites.
+
+Sync was checked the same way: `server.py` and `sync.py` run against two
+in-memory databases standing in for the office PC and Atlas, driving the real
+endpoints on each side - offline work, both sides editing, edit vs delete,
+duplicate order numbers, a rename carrying its dispatches, a PC clock 30 minutes
+fast, and two logins with one name.
 
 If you add tests properly, the highest-value ones:
 

@@ -2,6 +2,7 @@ import { Suspense, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/Auth";
 import { Loader } from "@/components/Loader";
+import { SyncBar } from "@/components/SyncBar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { LayoutGrid, ScrollText, Truck, Database, BookMarked, BarChart3, Building2, GitCompareArrows, LogOut, UserRound, Wallet, Table, Tag, ShieldCheck, Menu, MapIcon } from "lucide-react";
@@ -131,6 +132,8 @@ export const Layout = () => {
           </nav>
         </div>
       </header>
+      {/* a salesman's routes are fenced to his own screens, status included */}
+      {!isSalesman && <SyncBar />}
 
       {useMenu && (
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>

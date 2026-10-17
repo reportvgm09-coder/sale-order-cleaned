@@ -27,9 +27,88 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+from sync import SYNC_COLLECTIONS, TOMBSTONES, INFO, CONFLICTS, run_sync, sync_running, friendly as sync_problem
+
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+DB_NAME = os.environ['DB_NAME']
+raw_db = client[DB_NAME]
+
+# Set only on the office PC, to the online (Atlas) database. Its presence is
+# what makes this server the office copy that syncs; the online site has none.
+SYNC_REMOTE_URL = os.environ.get("SYNC_REMOTE_URL", "").strip()
+SYNC_MINUTES = max(1, int(os.environ.get("SYNC_MINUTES", "5")))
+
+
+class SyncedCollection:
+    """A collection that stamps updated_at on every write and leaves a note in
+    sync_deleted for every delete - which is all sync.py has to find changes by.
+    Done here rather than in each endpoint, so a write added later is synced
+    without anyone remembering to, the same reasoning as the login guard."""
+
+    def __init__(self, coll):
+        self._c = coll
+
+    def __getattr__(self, name):
+        return getattr(self._c, name)
+
+    async def insert_one(self, doc, *a, **kw):
+        doc["updated_at"] = now_iso()
+        return await self._c.insert_one(doc, *a, **kw)
+
+    async def insert_many(self, docs, *a, **kw):
+        stamp = now_iso()
+        for d in docs:
+            d["updated_at"] = stamp
+        return await self._c.insert_many(docs, *a, **kw)
+
+    async def replace_one(self, flt, doc, *a, **kw):
+        doc["updated_at"] = now_iso()
+        return await self._c.replace_one(flt, doc, *a, **kw)
+
+    async def update_one(self, flt, update, *a, **kw):
+        return await self._c.update_one(flt, self._stamped(update), *a, **kw)
+
+    async def update_many(self, flt, update, *a, **kw):
+        return await self._c.update_many(flt, self._stamped(update), *a, **kw)
+
+    async def delete_one(self, flt, *a, **kw):
+        gone = await self._c.find_one(flt, {"_id": 0, "id": 1})
+        res = await self._c.delete_one(flt, *a, **kw)
+        if res.deleted_count and gone and gone.get("id"):
+            await self._remember([gone["id"]])
+        return res
+
+    async def delete_many(self, flt, *a, **kw):
+        gone = [d["id"] for d in await self._c.find(flt, {"_id": 0, "id": 1}).to_list(None) if d.get("id")]
+        res = await self._c.delete_many(flt, *a, **kw)
+        if res.deleted_count:
+            await self._remember(gone)
+        return res
+
+    @staticmethod
+    def _stamped(update):
+        return {**update, "$set": {**update.get("$set", {}), "updated_at": now_iso()}}
+
+    async def _remember(self, ids):
+        stamp = now_iso()
+        await raw_db[TOMBSTONES].insert_many([{"coll": self._c.name, "id": i, "deleted_at": stamp} for i in ids])
+
+
+class SyncedDB:
+    def __init__(self, raw):
+        self._raw = raw
+
+    def __getitem__(self, name):
+        return SyncedCollection(self._raw[name]) if name in SYNC_COLLECTIONS else self._raw[name]
+
+    def __getattr__(self, name):
+        if name in SYNC_COLLECTIONS:
+            return SyncedCollection(getattr(self._raw, name))
+        return getattr(self._raw, name)
+
+
+db = SyncedDB(raw_db)
 
 app = FastAPI()
 
@@ -330,7 +409,10 @@ INDEXES = [
     ("users", "username_lc", True),
     ("order_photos", "id", True),
     ("order_photos", "order_id", False),
-] + [(coll, field, field == "id") for coll in MASTER_TYPES.values() for field in ("id", "name")]
+    # sync.py finds what changed by these
+    (TOMBSTONES, "deleted_at", False),
+    (TOMBSTONES, "coll", False),
+] + [(coll, field, field == "id") for coll in MASTER_TYPES.values() for field in ("id", "name")]   + [(coll, "updated_at", False) for coll in SYNC_COLLECTIONS]
 
 
 def now_iso():
@@ -1847,6 +1929,75 @@ async def photos_usage():
     return {"count": len(docs), "bytes": sum(d.get("size") or 0 for d in docs)}
 
 
+# ---------- Sync between the office PC and the online site ----------
+# Both copies answer /sync/status, so either can say how fresh it is. Only the
+# office PC, which has SYNC_REMOTE_URL, can run a sync - see sync.py.
+def require_sync_editor(user):
+    if not sees_money(user):
+        raise HTTPException(403, "Only an admin or editor can sync")
+
+
+async def sync_now():
+    return await run_sync(raw_db, SYNC_REMOTE_URL, DB_NAME, mongo_url, AsyncIOMotorClient)
+
+
+@api_router.get("/sync/status")
+async def sync_status(user: dict = Depends(require_auth)):
+    info = await raw_db[INFO].find_one({"_id": "sync"}, {"_id": 0}) or {}
+    out = {"office": bool(SYNC_REMOTE_URL), "last_sync": info.get("last_sync"), "running": sync_running()}
+    if SYNC_REMOTE_URL:
+        out["last_error"] = info.get("last_error")
+        out["every_minutes"] = SYNC_MINUTES
+        if sees_money(user):
+            out["conflicts"] = await raw_db[CONFLICTS].count_documents({})
+    return out
+
+
+@api_router.post("/sync/run")
+async def sync_run(user: dict = Depends(require_auth)):
+    require_sync_editor(user)
+    if not SYNC_REMOTE_URL:
+        raise HTTPException(400, "This is the online copy. Syncing is started from the office PC.")
+    try:
+        r = await sync_now()
+    except Exception as e:
+        raise HTTPException(503, sync_problem(e))
+    return {k: r[k] for k in ("last_sync", "pushed", "pulled", "conflicts")}
+
+
+@api_router.get("/sync/conflicts")
+async def sync_conflicts(user: dict = Depends(require_auth)):
+    require_sync_editor(user)
+    return await fetch_all(raw_db[CONFLICTS].find({}, {"_id": 0}).sort("at", -1), CONFLICTS)
+
+
+@api_router.delete("/sync/conflicts")
+async def clear_sync_conflicts(user: dict = Depends(require_auth)):
+    require_sync_editor(user)
+    res = await raw_db[CONFLICTS].delete_many({})
+    return {"deleted": res.deleted_count}
+
+
+@app.on_event("startup")
+async def start_sync_loop():
+    """On the office PC: sync as soon as the app starts, then every few minutes.
+    With no internet a run simply fails, is noted on the Sync bar, and the next
+    one tries again - nothing waits on it."""
+    if not SYNC_REMOTE_URL:
+        return
+
+    async def loop():
+        while True:
+            try:
+                await sync_now()
+            except Exception:
+                pass  # already logged and shown on the Sync bar
+            await asyncio.sleep(SYNC_MINUTES * 60)
+
+    app.state.sync_task = asyncio.create_task(loop())
+    logger.info("Office copy: syncing with the online database every %s minutes.", SYNC_MINUTES)
+
+
 # ---------- Backup ----------
 # order_photos is left out: a backup is one JSON file, and the photos would
 # swell it from kilobytes to hundreds of megabytes.
@@ -2086,6 +2237,10 @@ async def ensure_indexes():
 async def seed_expense_heads():
     """Only ever runs when the list is completely empty, so a head you delete
     on purpose does not reappear on the next restart."""
+    if SYNC_REMOTE_URL:
+        # The office PC gets its heads from the online copy at the first sync.
+        # Seeding its empty database first would add a second, duplicate set.
+        return
     try:
         if await db.expense_heads.find_one({}):
             return

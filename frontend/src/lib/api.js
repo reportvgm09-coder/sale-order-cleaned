@@ -105,6 +105,11 @@ export const api = {
   brandHistory: (id) => client.get(`/brands/${id}/history`).then((r) => r.data),
   // backup
   backup: () => client.get(`/backup`).then((r) => r.data),
+  // sync between the office PC and the online site
+  syncStatus: () => client.get(`/sync/status`).then((r) => r.data),
+  syncRun: () => client.post(`/sync/run`).then((r) => r.data),
+  syncConflicts: () => client.get(`/sync/conflicts`).then((r) => r.data),
+  clearSyncConflicts: () => client.delete(`/sync/conflicts`).then((r) => r.data),
 };
 
 export const apiErr = (e) => {
