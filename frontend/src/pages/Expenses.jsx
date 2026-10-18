@@ -35,7 +35,7 @@ const blankDraft = () => ({
 const Stat = ({ label, value, sub, testid, tone }) => (
   <Card data-testid={testid} className="rounded-sm border-2 border-border p-4 shadow-none">
     <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{label}</div>
-    <div className={`mt-1 break-words font-display text-xl font-extrabold tabular-nums sm:text-2xl ${tone || ""}`}>{value}</div>
+    <div className={`mt-1 truncate whitespace-nowrap font-display text-[clamp(1rem,1.35vw,1.5rem)] font-extrabold tabular-nums ${tone || ""}`}>{value}</div>
     {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
   </Card>
 );

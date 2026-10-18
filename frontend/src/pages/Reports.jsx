@@ -296,7 +296,7 @@ export default function Reports() {
         ].map((s) => (
           <Card key={s.t} data-testid={`report-${s.t}`} className="rounded-sm border-border p-4 shadow-none">
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{s.l}</div>
-            <div className="mt-1 break-words font-display text-xl font-extrabold tabular-nums sm:text-2xl">{s.v}</div>
+            <div className="mt-1 truncate whitespace-nowrap font-display text-[clamp(1rem,1.35vw,1.5rem)] font-extrabold tabular-nums">{s.v}</div>
           </Card>
         ))}
       </div>

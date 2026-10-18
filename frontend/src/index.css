@@ -7,26 +7,32 @@
 
 @layer base {
     :root {
-        --background: 210 20% 98%;
-        --foreground: 222 47% 11%;
+        /* Veena Garments: the banyan green of the logo, a shade deeper so
+           white text on it stays readable (5.6:1), on near-white neutrals
+           with a faint green cast. */
+        --background: 100 18% 97%;
+        --foreground: 150 24% 11%;
         --card: 0 0% 100%;
-        --card-foreground: 222 47% 11%;
+        --card-foreground: 150 24% 11%;
         --popover: 0 0% 100%;
-        --popover-foreground: 222 47% 11%;
-        --primary: 222 100% 33%;
+        --popover-foreground: 150 24% 11%;
+        --primary: 141 70% 27%;
         --primary-foreground: 0 0% 100%;
-        --secondary: 210 20% 96%;
-        --secondary-foreground: 222 47% 11%;
-        --muted: 210 20% 96%;
-        --muted-foreground: 215 16% 40%;
-        --accent: 222 100% 96%;
-        --accent-foreground: 222 100% 33%;
-        --destructive: 0 72% 51%;
+        --secondary: 110 16% 94%;
+        --secondary-foreground: 150 24% 11%;
+        --muted: 110 16% 94%;
+        --muted-foreground: 150 8% 38%;
+        --accent: 138 48% 93%;
+        --accent-foreground: 141 70% 24%;
+        --destructive: 0 72% 48%;
         --destructive-foreground: 0 0% 100%;
-        --border: 220 14% 80%;
-        --input: 220 14% 78%;
-        --ring: 222 100% 33%;
-        --radius: 0.25rem;
+        --border: 110 10% 84%;
+        --input: 110 10% 78%;
+        --ring: 141 70% 30%;
+        /* rounded-sm, used all over, is this less 4px - at 0.25rem it was
+           square. */
+        --radius: 0.625rem;
+        --brand: 139 70% 35%;
     }
 }
 
@@ -49,7 +55,7 @@
 }
 
 ::selection {
-    background: hsl(222 100% 33% / 0.15);
+    background: hsl(141 70% 27% / 0.18);
 }
 
 @media print {
@@ -113,3 +119,47 @@
     .brand-loader-ring { opacity: 1; }
     .brand-loader-sweep { display: none; }
 }
+
+/* ---- Tables (components/ui/table.jsx) ----
+   Heading row and grand total stick to the top and bottom of the table's box;
+   the total row is found by its data-testid, which every one of them carries.
+   Cells get an opaque background when stuck, or rows would show through. */
+.ledger-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: hsl(var(--secondary));
+}
+.ledger-table tr[data-testid$="total-row"] > td,
+.ledger-table tr[data-testid$="-total"] > td {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: hsl(var(--accent));
+    border-top: 2px solid hsl(var(--primary) / 0.45);
+    font-weight: 600;
+}
+.ledger-table tbody tr:not([data-testid$="total-row"]):not([data-testid$="-total"]):hover > td {
+    background-color: hsl(var(--accent) / 0.7);
+}
+/* A wide grid keeps its first column - the order number - in view when
+   scrolled sideways. */
+.ledger-table.sticky-first th:first-child,
+.ledger-table.sticky-first td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: hsl(var(--card));
+    box-shadow: 1px 0 0 hsl(var(--border));
+}
+.ledger-table.sticky-first thead th:first-child { z-index: 3; background: hsl(var(--secondary)); }
+.ledger-table.sticky-first tr[data-testid$="total-row"] > td:first-child { z-index: 2; background: hsl(var(--accent)); }
+@media print {
+    .ledger-table thead th,
+    .ledger-table td { position: static !important; }
+}
+/* ...but a stuck first cell must keep its row's order-state tint
+   (lib/orderState.js), or a cancelled row would lose its colour there. */
+.ledger-table.sticky-first tr.bg-slate-100 > td:first-child { background: rgb(241 245 249); }
+.ledger-table.sticky-first tr.bg-amber-200 > td:first-child { background: rgb(253 230 138); }
+.ledger-table.sticky-first tr.bg-red-100 > td:first-child { background: rgb(254 226 226); }

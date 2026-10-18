@@ -1504,6 +1504,12 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
     by_brand = {}
     by_season = {}
     open_orders = []
+    # For the charts: pieces ordered and sent per month the order was taken,
+    # and how many orders sit at each status. Pieces and counts only, so every
+    # login sees the same charts.
+    by_month = {}
+    status_mix = {"pending": 0, "partial": 0, "done": 0}
+    ordered_pieces = dispatched_pieces = 0.0
 
     for o in orders:
         dispatched = dispatched_map.get(o["id"], {})
@@ -1512,6 +1518,14 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
         if overdue_only and not is_overdue:
             continue
         total_orders += 1
+        status_mix[t["status"]] = status_mix.get(t["status"], 0) + 1
+        ordered_pieces += t["ordered_qty"]
+        dispatched_pieces += t["dispatched_qty"]
+        month = (o.get("order_date") or "")[:7] or "No date"
+        m = by_month.setdefault(month, {"month": month, "ordered_qty": 0, "dispatched_qty": 0, "orders": 0})
+        m["ordered_qty"] += t["ordered_qty"]
+        m["dispatched_qty"] += t["dispatched_qty"]
+        m["orders"] += 1
         if t["pending_qty"] > 0:
             orders_with_pending += 1
             pending_pieces += t["pending_qty"]
@@ -1551,6 +1565,10 @@ async def dashboard(customer_id: Optional[str] = None, brand_id: Optional[str] =
         "by_brand": [{"name": k, "qty": v} for k, v in sorted(by_brand.items(), key=lambda x: -x[1])],
         "by_season": [{"name": k, "qty": v} for k, v in sorted(by_season.items(), key=lambda x: -x[1])],
         "open_orders": open_orders,
+        "by_month": sorted(by_month.values(), key=lambda m: m["month"]),
+        "status_mix": status_mix,
+        "ordered_pieces": ordered_pieces,
+        "dispatched_pieces": dispatched_pieces,
     }
 
 

@@ -13,7 +13,8 @@ import { Loader } from "@/components/Loader";
 import { useMoreRows } from "@/components/MoreRows";
 import { useAuth } from "@/context/Auth";
 import { toast } from "sonner";
-import { FileSpreadsheet, Package, ShoppingCart, Boxes, IndianRupee, Inbox, AlertTriangle, FilterX, RefreshCw } from "lucide-react";
+import { MonthChart, StatusCard, TopPending } from "@/components/DashboardCharts";
+import { FileSpreadsheet, ShoppingCart, Boxes, IndianRupee, AlertTriangle, FilterX, RefreshCw, Clock, SlidersHorizontal, ChevronDown } from "lucide-react";
 
 // Shown instead of a blank crash when the API call fails - the dashboard is the
 // landing page, so a failure here used to take the whole app down.
@@ -42,42 +43,25 @@ const ConnectionError = ({ message, onRetry }) => (
   </div>
 );
 
-const StatCard = ({ label, value, icon: Icon, testid, accent }) => (
-  <Card data-testid={testid} className="rounded-sm border-border p-5 shadow-none transition-transform hover:-translate-y-px">
-    <div className="flex items-start justify-between">
-      <div>
-        <div className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">{label}</div>
-        <div className="mt-2 font-display text-3xl font-extrabold tracking-tight tabular-nums text-foreground">{value}</div>
+// A headline figure. `tone` colours the icon and the strip down the left edge.
+const TONES = {
+  green: { icon: "bg-accent text-primary", strip: "bg-primary" },
+  amber: { icon: "bg-amber-100 text-amber-700", strip: "bg-amber-500" },
+  red: { icon: "bg-red-100 text-red-700", strip: "bg-red-500" },
+  slate: { icon: "bg-secondary text-foreground/70", strip: "bg-foreground/25" },
+};
+const StatCard = ({ label, value, hint, icon: Icon, testid, tone = "green", className = "" }) => (
+  <Card data-testid={testid} className={`relative overflow-hidden rounded-lg border-border p-4 shadow-sm transition-shadow hover:shadow-md sm:p-5 ${className}`}>
+    <span className={`absolute inset-y-0 left-0 w-1 ${TONES[tone].strip}`} aria-hidden="true" />
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:text-[11px] sm:tracking-[0.18em]">{label}</div>
+        <div className="mt-1.5 truncate font-display text-2xl font-extrabold leading-tight tracking-tight tabular-nums text-foreground sm:text-[1.7rem]">{value}</div>
+        {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
       </div>
-      <div className={`flex h-10 w-10 items-center justify-center rounded-sm ${accent}`}>
+      <div className={`hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg sm:flex ${TONES[tone].icon}`}>
         <Icon className="h-5 w-5" />
       </div>
-    </div>
-  </Card>
-);
-
-const GroupList = ({ title, subtitle, rows, testid }) => (
-  <Card data-testid={testid} className="rounded-sm border-border shadow-none">
-    <div className="border-b border-border p-4">
-      <h3 className="font-display text-base font-bold tracking-tight">{title}</h3>
-      <p className="text-xs text-muted-foreground">{subtitle}</p>
-    </div>
-    <div className="max-h-80 overflow-auto">
-      {rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 p-8 text-center text-sm text-muted-foreground">
-          <Inbox className="h-6 w-6 opacity-50" />
-          Nothing pending. All caught up.
-        </div>
-      ) : (
-        <ul className="divide-y divide-border">
-          {rows.map((r) => (
-            <li key={r.name} className="flex items-center justify-between px-4 py-2.5 text-sm">
-              <span className="font-medium text-foreground">{r.name}</span>
-              <span className="tabular-nums font-semibold text-primary">{num(r.qty)} pcs</span>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   </Card>
 );
@@ -87,6 +71,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
+  // On a phone the six filters filled the first screen before any figure, so
+  // there they fold behind a button. A laptop always shows them.
+  const [showFilters, setShowFilters] = useState(false);
   const { seesMoney } = useAuth();
   const [masters, setMasters] = useState({ customers: [], brands: [], seasons: [] });
   const [filters, setFilters] = useState({ customer_id: "all", brand_id: "all", season_id: "all", event_type: "all", city: "all", overdue_only: false });
@@ -197,48 +184,59 @@ export default function Dashboard() {
           <h1 className="font-display text-3xl font-extrabold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Overview of pending dispatches across all sale orders.</p>
         </div>
-        <Button data-testid="export-report-btn" onClick={() => setExportOpen(true)} className="rounded-sm gap-2">
+        <Button data-testid="export-report-btn" onClick={() => setExportOpen(true)} className="w-full gap-2 rounded-lg sm:w-auto">
           <FileSpreadsheet className="h-4 w-4" /> Export Report to Excel
         </Button>
       </div>
 
       {/* Filters */}
-      <Card className="rounded-sm border-2 border-border p-4 shadow-none" data-testid="dashboard-filters">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[160px]">
+      <Button
+        data-testid="dash-filters-toggle"
+        variant="outline"
+        onClick={() => setShowFilters((v) => !v)}
+        className="h-11 w-full justify-between rounded-lg sm:hidden"
+      >
+        <span className="flex items-center gap-2">
+          <SlidersHorizontal className="h-4 w-4" /> Filters{activeCount > 0 ? ` (${activeCount})` : ""}
+        </span>
+        <ChevronDown className={`h-4 w-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
+      </Button>
+      <Card className={`rounded-lg border-border p-4 shadow-sm ${showFilters ? "block" : "hidden"} sm:block`} data-testid="dashboard-filters">
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
+          <div className="col-span-2 sm:min-w-[160px]">
             <Label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Customer</Label>
             <Select value={filters.customer_id} onValueChange={(v) => setF({ customer_id: v })}>
-              <SelectTrigger data-testid="dash-filter-customer" className="h-9 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="dash-filter-customer" className="h-10 rounded-md sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Customers</SelectItem>
                 {masters.customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}{c.city ? ` — ${c.city}` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-[150px]">
+          <div className="sm:min-w-[150px]">
             <Label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Brand</Label>
             <Select value={filters.brand_id} onValueChange={(v) => setF({ brand_id: v })}>
-              <SelectTrigger data-testid="dash-filter-brand" className="h-9 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="dash-filter-brand" className="h-10 rounded-md sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Brands</SelectItem>
                 {masters.brands.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-[150px]">
+          <div className="sm:min-w-[150px]">
             <Label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Season</Label>
             <Select value={filters.season_id} onValueChange={(v) => setF({ season_id: v })}>
-              <SelectTrigger data-testid="dash-filter-season" className="h-9 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="dash-filter-season" className="h-10 rounded-md sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Seasons</SelectItem>
                 {masters.seasons.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-[150px]">
+          <div className="sm:min-w-[150px]">
             <Label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Event Type</Label>
             <Select value={filters.event_type} onValueChange={(v) => setF({ event_type: v })}>
-              <SelectTrigger data-testid="dash-filter-event" className="h-9 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="dash-filter-event" className="h-10 rounded-md sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Events</SelectItem>
                 <SelectItem value="exhibition">Exhibition</SelectItem>
@@ -246,22 +244,22 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-[150px]">
+          <div className="sm:min-w-[150px]">
             <Label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">City</Label>
             <Select value={filters.city} onValueChange={(v) => setF({ city: v })}>
-              <SelectTrigger data-testid="dash-filter-city" className="h-9 rounded-sm border-2"><SelectValue /></SelectTrigger>
+              <SelectTrigger data-testid="dash-filter-city" className="h-10 rounded-md sm:h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Cities</SelectItem>
                 {cityOpts.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2 rounded-sm border-2 border-border px-3 py-1.5">
+          <div className="col-span-2 flex h-10 items-center gap-2 rounded-md border border-border px-3 sm:h-9">
             <Switch data-testid="dash-filter-overdue" checked={filters.overdue_only} onCheckedChange={(v) => setF({ overdue_only: v })} />
             <Label className="text-xs font-medium">Overdue only</Label>
           </div>
           {activeCount > 0 && (
-            <Button data-testid="dash-filter-reset" variant="outline" size="sm" onClick={resetF} className="h-9 gap-1 rounded-sm">
+            <Button data-testid="dash-filter-reset" variant="outline" size="sm" onClick={resetF} className="col-span-2 h-10 gap-1 rounded-md sm:h-9">
               <FilterX className="h-4 w-4" /> Reset ({activeCount})
             </Button>
           )}
@@ -277,20 +275,40 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${seesMoney ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
-        <StatCard testid="stat-total-orders" label="Total Sale Orders" value={num(data.total_orders)} icon={ShoppingCart} accent="bg-accent text-primary" />
-        <StatCard testid="stat-pending-orders" label="Orders With Pending Qty" value={num(data.orders_with_pending)} icon={Package} accent="bg-amber-100 text-amber-700" />
-        <StatCard testid="stat-pending-pieces" label="Pending Pieces" value={num(data.pending_pieces)} icon={Boxes} accent="bg-blue-100 text-blue-700" />
-        {seesMoney && <StatCard testid="stat-pending-value" label="Pending Value (est.)" value={inr(data.pending_value)} icon={IndianRupee} accent="bg-emerald-100 text-emerald-700" />}
+      <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${seesMoney ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
+        <StatCard testid="stat-total-orders" label="Sale Orders" value={num(data.total_orders)} hint="not counting cancelled" icon={ShoppingCart} tone="green" />
+        <StatCard
+          testid="stat-pending-orders"
+          label="Still to dispatch"
+          value={num(data.orders_with_pending)}
+          hint={`${num(data.pending_pieces)} pieces waiting`}
+          icon={Boxes}
+          tone="amber"
+        />
+        <StatCard
+          testid="stat-overdue"
+          className="col-span-2 sm:col-span-1"
+          label="Overdue"
+          value={num(data.overdue_count)}
+          hint="past their dispatch date"
+          icon={Clock}
+          tone={data.overdue_count > 0 ? "red" : "slate"}
+        />
+        {seesMoney && <StatCard testid="stat-pending-value" label="Pending Value (est.)" value={inr(data.pending_value)} hint="at order rates" icon={IndianRupee} tone="green" className="col-span-2 sm:col-span-1" />}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <GroupList testid="pending-by-customer" title="Pending by Customer" subtitle="Pieces not yet dispatched, grouped by customer" rows={data.by_customer} />
-        <GroupList testid="pending-by-brand" title="Pending by Brand" subtitle="Pieces not yet dispatched, grouped by brand" rows={data.by_brand} />
-        <GroupList testid="pending-by-season" title="Pending by Season" subtitle="Pieces not yet dispatched, grouped by season" rows={data.by_season || []} />
+        <MonthChart rows={data.by_month} />
+        <StatusCard mix={data.status_mix} ordered={data.ordered_pieces} dispatched={data.dispatched_pieces} />
       </div>
 
-      <Card className="rounded-sm border-border shadow-none" data-testid="open-orders-card">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <TopPending testid="pending-by-brand" title="Pending by Brand" subtitle="Pieces still to send - the top ten" rows={data.by_brand} />
+        <TopPending testid="pending-by-customer" title="Pending by Customer" subtitle="Pieces still to send - the top ten" rows={data.by_customer} />
+        <TopPending testid="pending-by-season" title="Pending by Season" subtitle="Pieces still to send" rows={data.by_season || []} />
+      </div>
+
+      <Card className="rounded-lg border-border shadow-sm" data-testid="open-orders-card">
         <div className="border-b border-border p-4">
           <h3 className="font-display text-base font-bold tracking-tight">Orders With Pending Dispatch</h3>
           <p className="text-xs text-muted-foreground">Sorted by expected dispatch date</p>

@@ -4,8 +4,8 @@
 const loadExcelJS = () => import("exceljs").then((m) => m.default || m);
 const loadXLSX = () => import("xlsx");
 
-const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002FA7" } };
-const ZEBRA_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F6FB" } };
+const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FF157A3A" } };
+const ZEBRA_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F7F2" } };
 // Whole-row colours an export can ask for, by name: cancelled orders in red,
 // orders on hold in neon yellow (see ExportDialog).
 const ROW_STYLES = {

@@ -48,7 +48,7 @@ const CHART_TYPES = [
   { key: "pie", label: "Pie (totals)", icon: PieIcon },
 ];
 
-const PALETTE = ["#002FA7", "#E8A33D", "#2E9E6B", "#C0392B", "#7D3C98", "#16A0A0", "#D35400", "#5D6D7E"];
+const PALETTE = ["#157A3A", "#E8A33D", "#2563EB", "#C0392B", "#7D3C98", "#16A0A0", "#D35400", "#5D6D7E"];
 
 const dimValue = (r, key) => {
   if (key === "event_type") return EVENT_LABEL[r.event_type] || r.event_type || "—";

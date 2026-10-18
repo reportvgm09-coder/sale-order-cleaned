@@ -608,7 +608,7 @@ export default function Orders() {
         {rows.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">No sale orders yet.</div>
         ) : (
-          <Table ref={tableRef} className="text-xs">
+          <Table ref={tableRef} className="sticky-first text-xs">
             <TableHeader>
               <TableRow className="bg-secondary/60">
                 {visible.map((c) => (

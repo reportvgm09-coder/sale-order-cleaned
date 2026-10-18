@@ -2,11 +2,16 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+// The box scrolls both ways on a laptop, so the heading row and the grand
+// total can stay in view while a long list moves between them (styles under
+// .ledger-table in index.css). On a phone the page scrolls instead - a box
+// inside a scrolling page is a trap for a thumb. Separate borders rather than
+// collapsed, because collapsed borders vanish from a cell once it sticks.
 const Table = React.forwardRef(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
+  <div className="relative w-full overflow-auto rounded-md md:max-h-[calc(100vh-13rem)] print:max-h-none print:overflow-visible">
     <table
       ref={ref}
-      className={cn("w-full caption-bottom border-collapse border border-border text-sm", className)}
+      className={cn("ledger-table w-full caption-bottom border-separate border-spacing-0 border-l border-t border-border text-sm", className)}
       {...props} />
   </div>
 ))
@@ -37,7 +42,7 @@ const TableRow = React.forwardRef(({ className, ...props }, ref) => (
   <tr
     ref={ref}
     className={cn(
-      "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+      "transition-colors data-[state=selected]:bg-muted",
       className
     )}
     {...props} />
@@ -48,7 +53,7 @@ const TableHead = React.forwardRef(({ className, ...props }, ref) => (
   <th
     ref={ref}
     className={cn(
-      "h-10 border border-border px-2 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "h-10 border-b border-r border-border px-2 text-left align-middle font-semibold text-foreground/70 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
     {...props} />
@@ -59,7 +64,7 @@ const TableCell = React.forwardRef(({ className, ...props }, ref) => (
   <td
     ref={ref}
     className={cn(
-      "border border-border p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "border-b border-r border-border p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
     {...props} />

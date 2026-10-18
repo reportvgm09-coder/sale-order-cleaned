@@ -61,7 +61,7 @@ export const Layout = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-white no-print">
+      <header className="sticky top-0 z-40 border-b border-border bg-white/95 shadow-[0_1px_0_0_hsl(var(--border)),0_6px_18px_-12px_rgb(0_0_0/0.25)] backdrop-blur no-print">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6">
           <div className="flex h-14 items-center justify-between gap-2 sm:h-16">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -111,7 +111,7 @@ export const Layout = () => {
           </div>
           {/* Scrolls sideways rather than clipping if a tab is ever added that
               no longer fits; narrower screens get the menu instead. */}
-          <nav className={`-mb-px overflow-x-auto ${useMenu ? "hidden xl:flex" : "flex"}`}>
+          <nav className={`gap-1 overflow-x-auto pb-2.5 ${useMenu ? "hidden xl:flex" : "flex"}`}>
             {shown.map((t) => {
               const Icon = t.icon;
               const active = isActive(t);
@@ -120,9 +120,9 @@ export const Layout = () => {
                   key={t.to}
                   to={t.to}
                   data-testid={t.testid}
-                  className={`flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-2.5 py-3 text-sm font-medium transition-colors ${
+                  className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                     useMenu ? "" : "flex-1 justify-center md:flex-none"
-                  } ${active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  } ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
                 >
                   {/* a salesman's four tabs fit a phone by their words alone */}
                   <Icon className={`h-4 w-4 ${useMenu ? "" : "hidden sm:block"}`} />
@@ -155,8 +155,8 @@ export const Layout = () => {
                     to={t.to}
                     data-testid={`drawer-${t.testid}`}
                     onClick={() => setMenuOpen(false)}
-                    className={`flex items-center gap-3 rounded-sm px-3 py-3 text-base font-medium ${
-                      active ? "bg-accent text-primary" : "text-foreground hover:bg-secondary"
+                    className={`flex items-center gap-3 rounded-md px-3 py-3 text-base font-medium ${
+                      active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"
                     }`}
                   >
                     <Icon className="h-5 w-5" />

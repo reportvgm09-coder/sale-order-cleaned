@@ -359,7 +359,6 @@ export default function MyOrders() {
               // Orders the office entered under his name are his to see, not to change.
               const byOffice = o.created_by !== userId;
               const locked = byOffice || (t.dispatched_qty || 0) > 0;
-              const why = byOffice ? "Entered by the office - ask them to change it" : "Goods have gone out - ask the office to change it";
               return (
                 <li key={o.id} className="flex flex-wrap items-start justify-between gap-3 p-4" data-testid={`my-order-${o.id}`}>
                   <div className="min-w-0 flex-1">
@@ -378,35 +377,47 @@ export default function MyOrders() {
                       {(o.items || []).map((it) => `${nameOf("brands", it.brand_id)} × ${num(it.qty)}`).join(", ")}
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="w-28 shrink-0 text-right">
                     <div className="font-semibold tabular-nums">{num(t.ordered_qty)} pcs</div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${t.ordered_qty ? Math.min(100, Math.round(((t.dispatched_qty || 0) / t.ordered_qty) * 100)) : 0}%` }}
+                      />
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
                       {num(t.dispatched_qty)} of {num(t.ordered_qty)} sent
                     </div>
-                    <div className="mt-1 flex justify-end gap-1">
-                      <Button
-                        data-testid={`my-order-edit-${o.id}`}
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        disabled={locked}
-                        title={locked ? why : "Edit"}
-                        onClick={() => startEdit(o)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        data-testid={`my-order-delete-${o.id}`}
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
-                        disabled={locked}
-                        title={locked ? why : "Delete"}
-                        onClick={() => remove(o)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {/* A greyed-out button explains itself only on hover, which a
+                        phone does not have - so a locked order says why in words. */}
+                    {locked ? (
+                      <div className="mt-1.5 text-[11px] leading-tight text-muted-foreground" data-testid={`my-order-locked-${o.id}`}>
+                        {byOffice ? "Ask the office to change it" : "Sent - ask the office"}
+                      </div>
+                    ) : (
+                      <div className="mt-1 flex justify-end gap-1">
+                        <Button
+                          data-testid={`my-order-edit-${o.id}`}
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-md"
+                          title="Edit"
+                          onClick={() => startEdit(o)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          data-testid={`my-order-delete-${o.id}`}
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-md text-destructive"
+                          title="Delete"
+                          onClick={() => remove(o)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </li>
               );
