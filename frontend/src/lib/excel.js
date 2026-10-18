@@ -43,11 +43,18 @@ export function sheetDate(v) {
     return Number.isNaN(d.getTime()) ? "" : iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
   }
   const s = String(v).trim();
+  // A serial number that arrived as text. Left to new Date() below, "46204"
+  // reads as the year 46204 - which is how 597 orders were once imported as
+  // 1 Jan 46204. 20000-80000 is 1954 to 2119, so no real typed year falls in it.
+  if (/^\d{5}(\.\d+)?$/.test(s) && Number(s) >= 20000 && Number(s) <= 80000) return sheetDate(Number(s));
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (dmy) return iso(dmy[3], Number(dmy[2]), Number(dmy[1]));
   const parsed = new Date(s);
-  return Number.isNaN(parsed.getTime()) ? "" : iso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+  // new Date() takes a lone number as a year, so stray text like "12345"
+  // would otherwise be saved as the year 12345 rather than flagged on import.
+  if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() < 1900 || parsed.getFullYear() > 2100) return "";
+  return iso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
 }
 
 function addSheet(wb, name, rows) {
