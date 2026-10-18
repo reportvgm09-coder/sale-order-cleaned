@@ -3,9 +3,10 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/Auth";
 import { Loader } from "@/components/Loader";
 import { SyncBar } from "@/components/SyncBar";
+import tree from "@/assets/brand/tree.webp";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { LayoutGrid, ScrollText, Truck, Database, BookMarked, BarChart3, Building2, GitCompareArrows, LogOut, UserRound, Wallet, Table, Tag, ShieldCheck, Menu, MapIcon } from "lucide-react";
+import { LayoutGrid, ScrollText, Truck, Database, BarChart3, Building2, GitCompareArrows, LogOut, UserRound, Wallet, Table, Tag, ShieldCheck, Menu, MapIcon } from "lucide-react";
 
 const tabs = [
   { to: "/", label: "Dashboard", icon: LayoutGrid, testid: "nav-dashboard", end: true },
@@ -21,6 +22,8 @@ const tabs = [
   { to: "/masters", label: "Masters", icon: Database, testid: "nav-masters" },
   { to: "/users", label: "Users", icon: ShieldCheck, testid: "nav-users", adminOnly: true },
 ];
+
+const COMPANY = "Veena Garments";
 
 // A salesman's whole app - see AppRoutes.
 const salesmanTabs = [
@@ -74,20 +77,18 @@ export const Layout = () => {
                   <Menu className="h-5 w-5" />
                 </Button>
               )}
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground">
-                <BookMarked className="h-5 w-5" />
-              </div>
+              <img src={tree} alt="" className="h-10 w-10 shrink-0" data-testid="brand-mark" />
               <div className="min-w-0 leading-tight">
                 <div className="truncate font-display text-lg font-extrabold tracking-tight text-foreground">Order Ledger</div>
                 {/* On a phone with the menu folded away, this says where you are. */}
                 <div className="truncate text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                   {useMenu ? (
                     <>
-                      <span className="xl:hidden" data-testid="nav-current">{current?.label || "Garment Distribution"}</span>
-                      <span className="hidden xl:inline">Garment Distribution</span>
+                      <span className="xl:hidden" data-testid="nav-current">{current?.label || COMPANY}</span>
+                      <span className="hidden xl:inline">{COMPANY}</span>
                     </>
                   ) : (
-                    "Garment Distribution"
+                    COMPANY
                   )}
                 </div>
               </div>
@@ -139,7 +140,9 @@ export const Layout = () => {
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetContent side="left" className="flex w-72 flex-col gap-0 p-0" data-testid="nav-drawer">
             <SheetHeader className="border-b border-border p-4 text-left">
-              <SheetTitle className="font-display text-lg font-extrabold tracking-tight">Order Ledger</SheetTitle>
+              <SheetTitle className="flex items-center gap-2 font-display text-lg font-extrabold tracking-tight">
+                <img src={tree} alt="" className="h-8 w-8" /> Order Ledger
+              </SheetTitle>
               <SheetDescription className="flex items-center gap-1.5 text-sm">{who}</SheetDescription>
             </SheetHeader>
             <nav className="flex-1 overflow-y-auto p-2">

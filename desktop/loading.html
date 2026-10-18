@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'">
+<title>Order Ledger</title>
+<!-- What the window shows while the database and server start. The same
+     animation as the app's own loader (frontend/src/index.css, .brand-loader),
+     so the hand-over to the app does not jump. -->
+<style>
+  @property --sweep { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+         background: #fff; font-family: "Segoe UI", system-ui, sans-serif; }
+  .logo { position: relative; width: 220px; aspect-ratio: 1; animation: in .45s cubic-bezier(.2,.7,.2,1) both; }
+  .logo img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ring { opacity: .18; }
+  .sweep { -webkit-mask-image: conic-gradient(from var(--sweep), transparent 0deg, transparent 150deg, #000 330deg, transparent 360deg);
+           animation: sweep 1.8s linear infinite; }
+  .centre { transform-origin: 50% 46%; animation: breathe 2.6s ease-in-out infinite; }
+  .label { font-size: 13px; font-weight: 700; letter-spacing: .25em; text-transform: uppercase; color: #1c1917; animation: in .45s ease-out .1s both; }
+  @keyframes sweep { to { --sweep: 360deg; } }
+  @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+  @keyframes in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .logo, .centre, .sweep, .label { animation: none; } .ring { opacity: 1; } .sweep { display: none; } }
+</style>
+</head>
+<body>
+  <div class="logo" aria-hidden="true">
+    <img class="ring" src="assets/logo-ring.webp" alt="">
+    <img class="sweep" src="assets/logo-ring.webp" alt="">
+    <img class="centre" src="assets/logo-centre.webp" alt="">
+  </div>
+  <div class="label">Starting Order Ledger…</div>
+</body>
+</html>

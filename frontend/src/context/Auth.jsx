@@ -4,7 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { BookMarked, LogIn, Loader2 } from "lucide-react";
+import { Loader } from "@/components/Loader";
+import logo from "@/assets/brand/logo.webp";
+import { LogIn, Loader2 } from "lucide-react";
 
 const TOKEN_KEY = "ledger_token";
 const USER_KEY = "ledger_user";
@@ -38,9 +40,7 @@ function LoginScreen({ onSignedIn }) {
     <div className="flex min-h-screen items-center justify-center bg-secondary/40 px-4" data-testid="login-screen">
       <Card className="w-full max-w-sm rounded-sm border-2 border-border p-7 shadow-none">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-sm border-2 border-border bg-accent text-primary">
-            <BookMarked className="h-6 w-6" />
-          </div>
+          <img src={logo} alt="Veena Garments Pvt Ltd, since 1965" className="h-36 w-36" data-testid="login-logo" />
           <h1 className="font-display text-2xl font-extrabold tracking-tight">Order Ledger</h1>
           <p className="text-sm text-muted-foreground">Sign in to continue.</p>
         </div>
@@ -138,7 +138,7 @@ export function AuthProvider({ children }) {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center" data-testid="auth-checking">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <Loader label="Starting…" />
       </div>
     );
   }

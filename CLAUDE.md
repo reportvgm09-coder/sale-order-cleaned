@@ -272,29 +272,40 @@ the browser, so filtering never goes back to the server. It deliberately shows
 order value and pending value only - **not** dispatched value, which would have
 made a fifth place computing it.
 
-### The loader plays itself
+### The company logo is taken apart for the loader
 
-`components/Loader.jsx` is Space Invaders on a canvas, and it is attract-mode
-first: it plays on its own, an arrow key or the on-screen buttons hand you the
-ship, and six idle seconds hand it back. Nobody should have to play a game to
-see their orders. It knows nothing about the request it is waiting on.
+The brand is Veena Garments Pvt Ltd. Everything comes from one supplied image
+(the round logo: cloud ring, banyan tree, lettering) and lives in
+`frontend/src/assets/brand/`:
 
-Three things in it look arbitrary and are not:
+| file | what | used for |
+|---|---|---|
+| `logo.webp` | the whole logo, transparent | sign-in screen, desktop setup |
+| `logo-ring.webp` | the cloud ring and border only | loader |
+| `logo-centre.webp` | the tree and lettering only | loader |
+| `tree.webp` | the green tree alone | header, menu drawer |
 
-- The autopilot **aims where the target will be.** The block keeps marching
-  while a shot is in the air, so firing at an invader's current position mostly
-  misses - it cleared barely half a wave a minute before the lead was added.
-- A dodge is **held until that bomb is past.** Deciding afresh each frame reads
-  as a dodge but is not one: the instant the ship is clear the threat looks
-  gone, it steers back, and it dies anyway. Committing took it from roughly
-  eight deaths a minute to under one.
-- `dt` is clamped **at both ends.** The ceiling stops a backgrounded tab
-  handing back a multi-second step that tunnels bullets through invaders; the
-  floor matters because the first frame's timestamp can predate the clock read
-  when the effect ran, and a negative step drives the whole game backwards.
+Plus `public/favicon.ico` (the tree - the whole logo is a grey smudge at 16px),
+`logo192.png`, `logo512.png`, `apple-touch-icon.png`, and `desktop/assets/`
+(`icon.ico` with the tree up to 48px and the whole logo above that, `icon.png`
+for the windows, and copies of the three logo layers for `loading.html`).
 
-Under `prefers-reduced-motion` it draws one still frame and never starts the
-loop or the key listeners.
+They were made with Pillow: white turned to transparency (so the logo sits on
+any background), and the ring and centre split on a circle at 0.595 of the
+logo's radius - the tree and lettering reach 0.56 and the clouds start at 0.63,
+so that circle cuts nothing. If the logo ever changes, remake all of them the
+same way.
+
+**The loader** (`components/Loader.jsx`, styles under `.brand-loader` in
+`index.css`) stacks those layers: the ring faint, a second copy of it shown
+through a conic mask whose angle (`--brand-sweep`, an `@property`) turns once
+every 1.8 s, and the centre breathing at 4%. The ring is **not** spun because
+the logo is slightly oval (1721 x 1659 in the original) and would wobble. It
+fades in after 0.15 s, so a quick load never flashes it. Only opacity,
+transform and that mask move, so it holds 60 fps while the page behind it is
+busy. Under `prefers-reduced-motion` it is the still logo. The desktop app's
+`loading.html` copies the same animation, so the hand-over to the app does not
+jump. It replaced a playable Space Invaders.
 
 ### Long lists draw 100 rows at a time
 
@@ -588,10 +599,14 @@ run offline" applies to it unchanged. Nothing about the online site changes.
 - **Closing the window stops the database cleanly** (`shutdown-db`) rather
   than killing it, so the next start does not have to recover a journal.
 - **Unsigned.** Windows SmartScreen warns on the first run of the installer
-  (More info > Run anyway). `signAndEditExecutable: false` in
-  `desktop/package.json` is not about that: electron-builder's signing kit
-  unpacks macOS symlinks, which Windows refuses without Developer Mode, and the
-  build fails. The cost is the default Electron icon and file details.
+  (More info > Run anyway).
+- **`desktop/prepare-signing-kit.ps1` runs before electron-builder.** The
+  builder's Windows kit (rcedit, which puts the icon on the program) comes in
+  an archive with macOS symlinks; Windows refuses those without Developer
+  Mode, the builder's own unpacking fails, and the build stops. The script
+  unpacks the kit once into the builder's cache, skipping those links.
+  Without it the only way through is `signAndEditExecutable: false`, which
+  ships the default Electron icon.
 - After changing the app, run `build-desktop.bat` again and install over the
   top. Bump `version` in `desktop/package.json` to tell builds apart.
 
@@ -635,9 +650,6 @@ pulling the payload builder out of `FastOrderEntry.jsx`, or importing
 `server.py` with stubbed FastAPI/Motor and an in-memory database. That
 approach caught real bugs (an order-ID generator that wrapped and collided; a
 `customer_history` refactor that had to be proved byte-for-byte identical).
-The loader was checked the same way: Babel the shipped `.jsx` to CommonJS, stub
-the three hooks and a canvas, and drive `requestAnimationFrame` by hand - which
-is also how the frames were rasterised to PNG to look at the sprites.
 
 Sync was checked the same way: `server.py` and `sync.py` run against two
 in-memory databases standing in for the office PC and Atlas, driving the real

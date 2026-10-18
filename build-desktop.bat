@@ -47,6 +47,7 @@ echo.
 echo   [4/4] Making the installer...
 pushd desktop
 call npm install --no-audit --no-fund || (popd & goto :fail)
+powershell -NoProfile -ExecutionPolicy Bypass -File "prepare-signing-kit.ps1" || (popd & goto :fail)
 call npx electron-builder --win nsis || (popd & goto :fail)
 popd
 

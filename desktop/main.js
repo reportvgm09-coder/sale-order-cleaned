@@ -188,8 +188,9 @@ const openSetup = () =>
     settingUp = true;
     const setup = new BrowserWindow({
       width: 560,
-      height: 720,
+      height: 800,
       resizable: false,
+      icon: ICON,
       title: "Set up Order Ledger",
       autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, "preload.js") },
@@ -226,12 +227,7 @@ const openSetup = () =>
     setup.on("closed", () => resolve(null));
   });
 
-const loadingPage = (text) =>
-  "data:text/html;charset=utf-8," +
-  encodeURIComponent(
-    `<body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;` +
-      `font-family:Segoe UI,sans-serif;color:#555;background:#fafaf9">${text}</body>`
-  );
+const ICON = path.join(__dirname, "assets", "icon.png");
 
 const menu = () =>
   Menu.buildFromTemplate([
@@ -280,12 +276,13 @@ const start = async () => {
     height: 900,
     minWidth: 360,
     title: "Order Ledger",
+    icon: ICON,
     show: false,
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   settingUp = false;
   win.maximize();
-  win.loadURL(loadingPage("Starting Order Ledger…"));
+  win.loadFile(path.join(__dirname, "loading.html"));
   win.once("ready-to-show", () => win.show());
   win.on("closed", () => (win = null));
   // The app's own pages stay in the window; anything else is the web, in the browser.
@@ -294,7 +291,7 @@ const start = async () => {
     return { action: url.startsWith(APP_URL) ? "allow" : "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
-    if (!url.startsWith(APP_URL) && !url.startsWith("data:")) {
+    if (!url.startsWith(APP_URL) && !url.startsWith("file:")) {
       e.preventDefault();
       shell.openExternal(url);
     }
