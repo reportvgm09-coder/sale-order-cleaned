@@ -1,7 +1,7 @@
 {
   "name": "order-ledger-desktop",
   "productName": "Order Ledger",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Order Ledger as a Windows program",
   "main": "main.js",
   "private": true,

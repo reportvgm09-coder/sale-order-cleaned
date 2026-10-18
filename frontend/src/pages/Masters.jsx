@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Plus, X, Upload, Download, Users, Tag, Store, UserCog, CalendarRange, Pencil, Check, DatabaseBackup, ShieldAlert, Wallet, Route } from "lucide-react";
+import { useMoreRows } from "@/components/MoreRows";
 
 const LISTS = [
   { type: "customers", label: "Customers", icon: Users, hasCity: true },
@@ -152,6 +153,8 @@ function MasterPanel({ type, label, icon: Icon, hasCity, hasRate: rateField }) {
   const twoCol = hasCity || hasRate;
   const extraPlaceholder = hasCity ? "City" : "Rate ₹";
 
+  const { shown, moreItem } = useMoreRows(items);
+
   return (
     <Card className="rounded-sm border-2 border-border shadow-none" data-testid={`master-${type}`}>
       <div className="flex items-center gap-2 border-b border-border p-4">
@@ -202,7 +205,7 @@ function MasterPanel({ type, label, icon: Icon, hasCity, hasRate: rateField }) {
           {items.length === 0 ? (
             <div className="rounded-sm border border-dashed border-border py-6 text-center text-sm text-muted-foreground">Nothing here yet.</div>
           ) : (
-            items.map((it) =>
+            [...shown.map((it) =>
               editId === it.id ? (
                 <div key={it.id} className={`grid gap-2 rounded-sm border border-primary/40 bg-accent/40 p-2 ${twoCol ? "grid-cols-[1fr_1fr_auto_auto]" : "grid-cols-[1fr_auto_auto]"}`} data-testid={`master-edit-${it.id}`}>
                   <Input data-testid={`master-edit-name-${it.id}`} value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveEdit()} className="h-8 rounded-sm border-2" />
@@ -228,7 +231,7 @@ function MasterPanel({ type, label, icon: Icon, hasCity, hasRate: rateField }) {
                   </div>
                 </div>
               )
-            )
+            ), moreItem()]
           )}
         </div>
       </div>

@@ -10,7 +10,8 @@ runs the desktop app.
 
 ## Installing
 
-1. Run **`Order Ledger Setup 1.0.0.exe`** (from `desktop\dist`).
+1. Run the newest **`Order Ledger Setup <version>.exe`** in `desktop\dist`.
+   Installing a newer one over the top keeps your data.
 2. Windows shows a blue *"Windows protected your PC"* box, because the program
    is not signed. Click **More info**, then **Run anyway**.
 3. Pick where to install, or keep the suggestion. A desktop shortcut is made.
@@ -24,8 +25,10 @@ as on the online site.
 
 On another PC, type them in:
 
-- **Online database** - your MongoDB Atlas connection string (from
-  `show-hosting-values.bat`). Leave blank to keep everything on that PC only.
+- **Online database** - your MongoDB Atlas connection string. It is the
+  `MONGO_URL` line in `backend\.env` (or `SYNC_REMOTE_URL`, once
+  `setup-offline.bat` has been run), and also on Render: the API service >
+  Environment > `MONGO_URL`. Leave blank to keep everything on that PC only.
 - **Database name** - the same `DB_NAME` the online site uses.
 - **Username** and **password** - use the same as the online site.
 

@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import FastOrderEntry from "@/components/FastOrderEntry";
 import { OrderPhotos, PhotosButton, uploadPending } from "@/components/OrderPhotos";
 import { ExportDialog } from "@/components/ExportDialog";
+import { useMoreRows } from "@/components/MoreRows";
 import { toast } from "sonner";
 import { Plus, Trash2, Pencil, X, FileSpreadsheet, Upload, Download, ScrollText, Zap } from "lucide-react";
 
@@ -356,6 +357,7 @@ export default function SaleOrders() {
     (a, o) => ({ ordered: a.ordered + o.totals.ordered_qty, pending: a.pending + o.totals.pending_qty, amount: a.amount + o.totals.amount }),
     { ordered: 0, pending: 0, amount: 0 }
   );
+  const { shown, moreRow } = useMoreRows(filtered);
 
   return (
     <div className="space-y-6" data-testid="sale-orders-view">
@@ -685,7 +687,7 @@ export default function SaleOrders() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((o) => (
+              {shown.map((o) => (
                 <TableRow
                   key={o.id}
                   className={stateRowClass(o.state) || "hover:bg-secondary/40"}
@@ -721,6 +723,7 @@ export default function SaleOrders() {
                   </TableCell>
                 </TableRow>
               ))}
+              {moreRow(seesMoney ? 9 : 8)}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="so-total-row">
                 <TableCell colSpan={3}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(listTotals.ordered)}</TableCell>

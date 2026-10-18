@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Building2, ArrowRight, Search, FilterX } from "lucide-react";
 import { Loader } from "@/components/Loader";
+import { useMoreRows } from "@/components/MoreRows";
 import { useAuth } from "@/context/Auth";
 
 // "Active" means the customer still has pieces waiting to go out, i.e. at least
@@ -52,6 +53,7 @@ export default function CustomersList() {
     (a, c) => ({ orders: a.orders + (c.order_count || 0), pending: a.pending + (c.pending_qty || 0), amount: a.amount + (c.amount || 0) }),
     { orders: 0, pending: 0, amount: 0 }
   );
+  const { shown, moreRow } = useMoreRows(filtered);
 
   if (loading) return <Loader label="Loading customers…" />;
 
@@ -120,7 +122,7 @@ export default function CustomersList() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((c) => (
+              {shown.map((c) => (
                 <TableRow
                   key={c.id}
                   className="cursor-pointer hover:bg-secondary/40"
@@ -146,6 +148,7 @@ export default function CustomersList() {
                   </TableCell>
                 </TableRow>
               ))}
+              {moreRow(seesMoney ? 6 : 5)}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="customers-total-row">
                 <TableCell colSpan={2}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(totals.orders)}</TableCell>

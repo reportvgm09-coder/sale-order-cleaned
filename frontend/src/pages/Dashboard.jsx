@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader } from "@/components/Loader";
+import { useMoreRows } from "@/components/MoreRows";
 import { useAuth } from "@/context/Auth";
 import { toast } from "sonner";
 import { FileSpreadsheet, Package, ShoppingCart, Boxes, IndianRupee, Inbox, AlertTriangle, FilterX, RefreshCw } from "lucide-react";
@@ -178,6 +179,8 @@ export default function Dashboard() {
     },
   ];
 
+  const { shown: openShown, moreRow } = useMoreRows(data?.open_orders || []);
+
   if (loading) return <Loader label="Loading ledger…" />;
   if (!data) return <ConnectionError message={error} onRetry={retry} />;
 
@@ -307,7 +310,7 @@ export default function Dashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.open_orders.map((o) => (
+              {openShown.map((o) => (
                 <TableRow key={o.id} className={`hover:bg-secondary/40 ${o.overdue ? "bg-red-50 hover:bg-red-100" : ""}`} data-testid={`open-order-${o.id}`}>
                   <TableCell className="font-mono font-semibold">{o.id}</TableCell>
                   <TableCell>{o.customer}{o.city ? <span className="ml-1 text-xs text-muted-foreground">· {o.city}</span> : null}</TableCell>
@@ -332,6 +335,7 @@ export default function Dashboard() {
                   </TableCell>
                 </TableRow>
               ))}
+              {moreRow(seesMoney ? 7 : 6)}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="open-orders-total-row">
                 <TableCell colSpan={3}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(openTotals.ordered)}</TableCell>

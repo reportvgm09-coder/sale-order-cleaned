@@ -13,6 +13,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Trash2, FileSpreadsheet, Truck, ChevronsUpDown, Check } from "lucide-react";
+import { useMoreRows } from "@/components/MoreRows";
 
 export default function DispatchOrders() {
   const [orders, setOrders] = useState([]);
@@ -48,10 +49,13 @@ export default function DispatchOrders() {
     });
 
   const brandName = (id) => brands.find((b) => b.id === id)?.name || "—";
-  const customerName = (soId) => {
-    const o = orders.find((x) => x.id === soId);
-    return customers.find((c) => c.id === o?.customer_id)?.name || "Unassigned";
-  };
+  // Looked up once per order in the order picker, twice per row - with a
+  // thousand orders a search through both lists each time was millions of steps.
+  const customerName = useMemo(() => {
+    const names = new Map(customers.map((c) => [c.id, c.name]));
+    const owner = new Map(orders.map((o) => [o.id, o.customer_id]));
+    return (soId) => names.get(owner.get(soId)) || "Unassigned";
+  }, [orders, customers]);
   const eventInfo = (o) => {
     if ((o.event_type || "exhibition") === "door_to_door") {
       const s = salesmen.find((x) => x.id === o.salesman_id)?.name;
@@ -91,6 +95,7 @@ export default function DispatchOrders() {
   }, []);
 
   const order = orders.find((o) => o.id === selected);
+  const { shown: shownDispatches, moreRow } = useMoreRows(dispatches);
 
   // per-brand ordered & already dispatched for selected order
   const rows = useMemo(() => {
@@ -347,7 +352,7 @@ export default function DispatchOrders() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {dispatches.map((d) => {
+              {shownDispatches.map((d) => {
                 const totalPcs = (d.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
                 return (
                   <TableRow key={d.id} className="hover:bg-secondary/40" data-testid={`dispatch-row-${d.id}`}>
@@ -376,6 +381,7 @@ export default function DispatchOrders() {
                   </TableRow>
                 );
               })}
+              {moreRow(7)}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="dispatch-total-row">
                 <TableCell colSpan={5}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(dispatches.reduce((s, d) => s + (d.items || []).reduce((x, it) => x + (Number(it.qty) || 0), 0), 0))}</TableCell>

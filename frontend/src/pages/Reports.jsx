@@ -12,6 +12,7 @@ import { ExportDialog } from "@/components/ExportDialog";
 import { toast } from "sonner";
 import { FileSpreadsheet, Printer, FilterX, Pencil, Truck, ArrowUp, ArrowDown } from "lucide-react";
 import { Loader } from "@/components/Loader";
+import { useMoreRows } from "@/components/MoreRows";
 
 const EVENT_LABEL = { exhibition: "Exhibition", door_to_door: "Door to Door" };
 const eventLabel = (v) => EVENT_LABEL[v] || v || "—";
@@ -143,6 +144,7 @@ export default function Reports() {
       return String(x ?? "").localeCompare(String(y ?? ""), "en", { numeric: true }) * factor;
     });
   }, [filtered, sort]);
+  const { shown, moreRow } = useMoreRows(sorted);
 
   const toggleSort = (key) =>
     setSort((p) => (p?.key === key ? { key, dir: p.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -401,7 +403,7 @@ export default function Reports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sorted.map((r, i) => (
+                {shown.map((r, i) => (
                   <TableRow key={`${r.sale_order_id}-${r.brand}-${i}`} className="hover:bg-secondary/40">
                     <TableCell className="font-mono font-semibold">{r.sale_order_id}</TableCell>
                     <TableCell>{r.customer}{r.city ? <span className="ml-1 text-xs text-muted-foreground">· {r.city}</span> : null}</TableCell>
@@ -440,6 +442,7 @@ export default function Reports() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {moreRow(seesMoney ? 12 : 10)}
                 <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="detail-total-row">
                   <TableCell colSpan={6}>Grand Total</TableCell>
                   <TableCell className="text-right tabular-nums">{num(totals.ordered_qty)}</TableCell>

@@ -296,6 +296,35 @@ Three things in it look arbitrary and are not:
 Under `prefers-reduced-motion` it draws one still frame and never starts the
 loop or the key listeners.
 
+### Long lists draw 100 rows at a time
+
+Drawing every row was what made the app slow: about 1,000 orders came to some
+30,000 elements on Orders and Sale Orders, which froze the screen for 1-2.5 s on
+each page change and on every key typed into a filter or an entry form on the
+same page. `useMoreRows()` (`components/MoreRows.jsx`) hands a table the first
+100 of its list and a row to put before the total row that loads 100 more as it
+is scrolled to, with Show more / Show all buttons. Used on Dashboard, Sale
+Orders, Orders, Dispatch, Customers, Reports and the Masters lists.
+
+- **Only the drawing is held back.** Totals, filters, sorting, select-all and
+  exports still work on the full list - keep it that way when adding a table:
+  compute from the full list, `.map()` over `shown`.
+- **Printing draws everything** (`beforeprint`), so a printout is never short.
+- It goes back to 100 when the list's **length** changes, not its identity -
+  several pages build their list fresh on every render, and resetting on that
+  would never settle.
+- Page changes went from 1-3 s frozen to 0.1-0.5 s, and a keystroke in the
+  Customers search from most of a second to under 50 ms, on a copy of the real
+  data (994 orders, 1,234 customers, 886 dispatches).
+
+### No third-party scripts in index.html
+
+The template the app began from loaded an emergent.sh helper and PostHog with
+**session recording on** - a recording of every screen, customer names and
+amounts included, sent to someone else's servers. It also slowed every page
+and held up loading on a PC with no internet. Both are gone; do not add
+analytics back without the owner asking for it.
+
 ### Export column memory stores what you turned OFF
 
 `ExportDialog` saves the **excluded** columns, not the included ones. If it

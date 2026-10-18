@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Loader } from "@/components/Loader";
+import { useMoreRows } from "@/components/MoreRows";
 import { useAuth } from "@/context/Auth";
 import { toast } from "sonner";
 import { Table as TableIcon, FileSpreadsheet, FilterX, Filter, ArrowUp, ArrowDown, Columns3 } from "lucide-react";
@@ -398,6 +399,7 @@ export default function Orders() {
       return String(x ?? "").localeCompare(String(y ?? ""), "en") * factor;
     });
   }, [columns, filtered, sort]);
+  const { shown, moreRow } = useMoreRows(sorted);
 
   const totals = useMemo(
     () =>
@@ -643,7 +645,7 @@ export default function Orders() {
                   </TableCell>
                 </TableRow>
               ) : (
-                sorted.map((r) => (
+                shown.map((r) => (
                   <TableRow
                     key={r.id}
                     className={stateRowClass(r.state_key) || "hover:bg-secondary/40"}
@@ -675,6 +677,8 @@ export default function Orders() {
                   </TableRow>
                 ))
               )}
+
+              {moreRow(visible.length)}
 
               {sorted.length > 0 && (
                 <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="orders-total-row">
