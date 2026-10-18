@@ -1,0 +1,37 @@
+{
+  "name": "order-ledger-desktop",
+  "productName": "Order Ledger",
+  "version": "1.0.0",
+  "description": "Order Ledger as a Windows program",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "in.orderledger.desktop",
+    "productName": "Order Ledger",
+    "directories": { "output": "dist", "buildResources": "assets" },
+    "files": ["main.js", "preload.js", "setup.html"],
+    "extraResources": [
+      { "from": "../backend/dist/order-ledger-server", "to": "server" },
+      { "from": "vendor/mongodb", "to": "mongodb" },
+      { "from": "../frontend/build", "to": "site" }
+    ],
+    "win": { "target": "nsis", "signAndEditExecutable": false },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Order Ledger",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

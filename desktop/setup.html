@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Set up Order Ledger</title>
+<style>
+  :root { --ink: #1c1917; --muted: #6b6560; --line: #d6d3d1; --brand: #1e3a8a; --bad: #b91c1c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 32px; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #fafaf9; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  p.lead { margin: 0 0 20px; color: var(--muted); }
+  label { display: block; margin: 14px 0 4px; font-weight: 600; }
+  .hint { margin-top: 3px; font-size: 12px; color: var(--muted); }
+  input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; font: inherit; background: #fff; }
+  input:focus { outline: 2px solid var(--brand); outline-offset: -1px; }
+  button { padding: 9px 16px; border-radius: 3px; font: inherit; font-weight: 600; cursor: pointer; }
+  .secondary { width: 100%; border: 1px dashed var(--brand); background: #eef2ff; color: var(--brand); }
+  .primary { margin-top: 22px; width: 100%; border: 0; background: var(--brand); color: #fff; }
+  .primary:disabled { opacity: .6; cursor: default; }
+  #msg { min-height: 20px; margin-top: 10px; font-size: 13px; }
+  #msg.bad { color: var(--bad); }
+  #msg.good { color: #166534; }
+</style>
+</head>
+<body>
+  <h1>Set up Order Ledger</h1>
+  <p class="lead">Once, on this PC. Everything is kept on this PC and works without internet.</p>
+
+  <button class="secondary" id="import" data-testid="setup-import">Copy settings from my old app folder</button>
+  <div class="hint">Pick the folder that has <b>start-app.bat</b> in it, and this page fills itself in.</div>
+
+  <label for="remote">Online database (to sync with)</label>
+  <input id="remote" data-testid="setup-remote" placeholder="mongodb+srv://…" autocomplete="off" spellcheck="false">
+  <div class="hint">Your MongoDB Atlas connection string. Leave it blank to keep everything on this PC only.</div>
+
+  <label for="dbName">Database name</label>
+  <input id="dbName" data-testid="setup-dbname" placeholder="sale_orders" spellcheck="false">
+  <div class="hint">Must match the online site's DB_NAME, or the two will not sync.</div>
+
+  <label for="username">Username</label>
+  <input id="username" data-testid="setup-username" autocomplete="off">
+
+  <label for="password">Password</label>
+  <input id="password" data-testid="setup-password" type="password" autocomplete="new-password">
+  <div class="hint" id="pwHint">Use the same as the online site, so one login works in both places.</div>
+
+  <button class="primary" id="save" data-testid="setup-save">Save and start</button>
+  <div id="msg" role="status"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const existing = JSON.parse(new URLSearchParams(location.search).get("existing") || "{}");
+  let importedHash = existing.passwordHash || "";
+
+  $("remote").value = existing.remote || "";
+  $("dbName").value = existing.dbName || "";
+  $("username").value = existing.username || "";
+  const keepHint = () => {
+    $("pwHint").textContent = importedHash
+      ? "Leave blank to keep the current password, or type a new one."
+      : "Use the same as the online site, so one login works in both places.";
+  };
+  keepHint();
+
+  const say = (text, kind) => { $("msg").textContent = text; $("msg").className = kind || ""; };
+
+  $("import").onclick = async () => {
+    const r = await window.setup.pickFolder();
+    if (!r) return;
+    if (r.error) return say(r.error, "bad");
+    if (r.remote) $("remote").value = r.remote;
+    if (r.dbName) $("dbName").value = r.dbName;
+    if (r.username) $("username").value = r.username;
+    if (r.passwordHash) { importedHash = r.passwordHash; $("password").value = ""; }
+    keepHint();
+    say("Settings copied. Your password stays the same as before.", "good");
+  };
+
+  $("save").onclick = async () => {
+    $("save").disabled = true;
+    say("Saving…");
+    try {
+      const r = await window.setup.save({
+        remote: $("remote").value, dbName: $("dbName").value, username: $("username").value,
+        password: $("password").value, passwordHash: importedHash,
+      });
+      if (r && r.error) say(r.error, "bad");
+    } catch (e) {
+      say("Could not save: " + e.message, "bad");
+    } finally {
+      $("save").disabled = false;
+    }
+  };
+</script>
+</body>
+</html>

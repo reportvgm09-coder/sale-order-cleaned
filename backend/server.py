@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
@@ -2185,7 +2185,7 @@ async def root():
     return {"message": "Order Ledger API", "status": "ok"}
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def service_root():
     """The bare service address, e.g. https://sale-order-api.onrender.com
 
@@ -2193,6 +2193,9 @@ async def service_root():
     else, so it answers instead of returning a bare 404. Carries no data and
     needs no login - it says nothing a stranger could not already guess.
     """
+    if FRONTEND_DIR:
+        # the desktop app: the bare address is the app itself (see desktop_site)
+        return FileResponse(Path(FRONTEND_DIR) / "index.html", headers={"Cache-Control": "no-cache"})
     return {
         "message": "Order Ledger API",
         "status": "ok",
@@ -2202,6 +2205,25 @@ async def service_root():
 
 app.include_router(auth_router)
 app.include_router(api_router)
+
+# ---------- Desktop app ----------
+# In the desktop app this server also hands out the built website, so the
+# window and the API share one address and BrowserRouter's paths still work on
+# a refresh. FRONTEND_DIR is set only there - on Render the site is a separate
+# static service and this adds nothing.
+FRONTEND_DIR = os.environ.get("FRONTEND_DIR", "").strip()
+if FRONTEND_DIR:
+    _site = Path(FRONTEND_DIR).resolve()
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def desktop_site(path: str):
+        if path.startswith("api/"):
+            raise HTTPException(404, "Not found")
+        f = (_site / path).resolve()
+        if path and f.is_file() and _site in f.parents:
+            return FileResponse(f)
+        # any app address - /customers/CUST-1 and the like - is the app itself
+        return FileResponse(_site / "index.html", headers={"Cache-Control": "no-cache"})
 
 # allow_credentials is off because auth travels in the Authorization header,
 # not cookies - which also means CORS_ORIGINS="*" stays valid for browsers.

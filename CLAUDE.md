@@ -25,6 +25,7 @@ frontend/         Create React App + craco, Tailwind, shadcn/ui, Radix.
 DEPLOY.md         Step-by-step hosting guide, written for a beginner.
 MAKING-CHANGES.md Day-to-day "I want to change something" guide.
 render.yaml       Render blueprint: API (web service) + site (static).
+desktop/          Electron shell for the Windows desktop app (build-desktop.bat).
 ```
 
 **Data lives in MongoDB Atlas** (free M0). A PC that has not been through
@@ -38,7 +39,7 @@ syncs it - see "The office PC can run offline" below.
 opens two windows. Frontend on 3000, API on 8000.
 
 Other helpers: `set-password.bat`, `show-hosting-values.bat`, `check-db.bat`,
-`restore-backup.bat`, `setup-offline.bat`, `sync-now.bat`.
+`restore-backup.bat`, `setup-offline.bat`, `sync-now.bat`, `build-desktop.bat`.
 
 ---
 
@@ -527,6 +528,47 @@ the Sync now button, and from `sync-now.bat`. **Only the office runs it**;
 - `SyncBar.jsx`, under the header, says how fresh the copy you are looking at
   is. It shows nothing until a first sync, so a site not using this looks as it
   did. Salesmen do not get it: `/sync/*` is not in `SALESMAN_ROUTES`.
+
+### The desktop app is this same app in a window
+
+`build-desktop.bat` makes `desktop\dist\Order Ledger Setup <version>.exe`. The
+installed program carries everything: `mongod.exe` (MongoDB 8.0.4 plus the four
+Visual C++ runtime DLLs it needs, from `desktop/get-mongodb.ps1`), the server
+bundled by PyInstaller (`backend/desktop_main.py`), and the built website. It is
+the office copy - `SYNC_REMOTE_URL` set - so everything under "The office PC can
+run offline" applies to it unchanged. Nothing about the online site changes.
+
+- **One address for site and API.** With `FRONTEND_DIR` set, the server also
+  hands out the built site, with every non-file path answering `index.html`
+  so BrowserRouter survives a refresh - the job `render.yaml`'s rewrite does
+  online. `/api/...` that matches nothing still 404s rather than getting the
+  page. Only set in the desktop app; Render never sees it.
+- **Fixed ports, 47800 (app) and 47817 (database), on 127.0.0.1 only.** The
+  site is built with `REACT_APP_BACKEND_URL=http://127.0.0.1:47800` baked in,
+  and the sign-in lives in that origin's storage, so a random port would mean
+  a rebuild and a sign-out each time. High enough to sit beside `start-app.bat`
+  (3000/8000) and a MongoDB service (27017).
+- **Settings live in `%APPDATA%\Order Ledger\settings.json`**, the database in
+  `database\` beside it, logs in `logs\`. Nothing is in the install folder, so
+  updating or uninstalling keeps the data (`deleteAppDataOnUninstall: false`).
+  The first run shows `desktop/setup.html`; "Copy settings from my old app
+  folder" reads `backend\.env` - the Atlas string (from `SYNC_REMOTE_URL`, or a
+  non-local `MONGO_URL`), `DB_NAME`, `APP_USERNAME` and the existing hash - so
+  the owner login is the same one used online. `JWT_SECRET` is made fresh.
+  Help > Change settings reopens it.
+- **Closing the window stops the database cleanly** (`shutdown-db`) rather
+  than killing it, so the next start does not have to recover a journal.
+- **Unsigned.** Windows SmartScreen warns on the first run of the installer
+  (More info > Run anyway). `signAndEditExecutable: false` in
+  `desktop/package.json` is not about that: electron-builder's signing kit
+  unpacks macOS symlinks, which Windows refuses without Developer Mode, and the
+  build fails. The cost is the default Electron icon and file details.
+- After changing the app, run `build-desktop.bat` again and install over the
+  top. Bump `version` in `desktop/package.json` to tell builds apart.
+
+Checked by driving the packaged program over the DevTools protocol with a
+throwaway `--user-data-dir`: first-run setup, sign-in, reload, two-way sync
+against a second real MongoDB standing in for Atlas, and a clean stop.
 
 ## Gotchas
 
