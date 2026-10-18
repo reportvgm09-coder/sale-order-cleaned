@@ -533,6 +533,10 @@ collection, not on disk, because Render's free disk is wiped on every restart.
   removing is a change, so a salesman may do it only on orders he entered.
 - Order lists carry `photo_count` (no images) for the paperclip. Photos follow
   an order through a rename and are deleted with it.
+- **The order number opens the photos** on Sale Orders and the Orders grid
+  (`OrderIdPhotos`): full size straight away, or "No photo attached" - which
+  it can say without a request, from `photo_count`. Viewing only; adding and
+  removing stay on the paperclip and the order form.
 - **Not in the backup file** - it would grow from kilobytes to hundreds of MB.
 
 ### The map places customers by their typed city

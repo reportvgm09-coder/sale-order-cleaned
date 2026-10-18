@@ -15,7 +15,7 @@ import { ORDER_STATES, stateFromLabel, stateLabel, stateRowClass } from "@/lib/o
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import FastOrderEntry from "@/components/FastOrderEntry";
-import { OrderPhotos, PhotosButton, uploadPending } from "@/components/OrderPhotos";
+import { OrderIdPhotos, OrderPhotos, PhotosButton, uploadPending } from "@/components/OrderPhotos";
 import { ExportDialog } from "@/components/ExportDialog";
 import { useMoreRows } from "@/components/MoreRows";
 import { toast } from "sonner";
@@ -680,6 +680,7 @@ export default function SaleOrders() {
                 </TableHead>
                 <TableHead className="text-xs uppercase tracking-widest">Order</TableHead>
                 <TableHead className="text-xs uppercase tracking-widest">Customer</TableHead>
+                <TableHead className="text-xs uppercase tracking-widest">Brands</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Ordered</TableHead>
                 <TableHead className="text-right text-xs uppercase tracking-widest">Pending</TableHead>
                 <TableHead className="text-xs uppercase tracking-widest">Fulfilment</TableHead>
@@ -698,11 +699,21 @@ export default function SaleOrders() {
                   <TableCell>
                     <Checkbox data-testid={`so-select-${o.id}`} checked={selected.includes(o.id)} onCheckedChange={() => toggleSel(o.id)} />
                   </TableCell>
-                  <TableCell className="font-mono font-semibold">
-                    {o.id}
+                  <TableCell className="whitespace-nowrap">
+                    {/* the order number opens its order-form photos */}
+                    <OrderIdPhotos order={o} />
                     <PhotosButton order={o} canChange={canEdit} />
                   </TableCell>
                   <TableCell>{nameOf("customers", o.customer_id)}{cityOf(o.customer_id) ? <span className="ml-1 text-xs text-muted-foreground">· {cityOf(o.customer_id)}</span> : null}</TableCell>
+                  <TableCell className="text-sm" data-testid={`so-brands-${o.id}`}>
+                    <div className="flex max-w-[260px] flex-wrap gap-1">
+                      {(o.items || []).map((it, i) => (
+                        <span key={it.id || i} className="whitespace-nowrap rounded-full border border-border bg-secondary/60 px-2 py-0.5 text-xs">
+                          {nameOf("brands", it.brand_id)} <span className="font-semibold tabular-nums">× {num(it.qty)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{num(o.totals.ordered_qty)}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-amber-700">{num(o.totals.pending_qty)}</TableCell>
                   <TableCell><Progress ordered={o.totals.ordered_qty} dispatched={o.totals.dispatched_qty} /></TableCell>
@@ -725,9 +736,9 @@ export default function SaleOrders() {
                   </TableCell>
                 </TableRow>
               ))}
-              {moreRow(seesMoney ? 9 : 8)}
+              {moreRow(seesMoney ? 10 : 9)}
               <TableRow className="border-t-2 border-foreground/20 bg-secondary/40 font-semibold" data-testid="so-total-row">
-                <TableCell colSpan={3}>Grand Total</TableCell>
+                <TableCell colSpan={4}>Grand Total</TableCell>
                 <TableCell className="text-right tabular-nums">{num(listTotals.ordered)}</TableCell>
                 <TableCell className="text-right tabular-nums text-amber-700">{num(listTotals.pending)}</TableCell>
                 <TableCell />

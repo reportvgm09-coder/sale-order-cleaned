@@ -4,7 +4,7 @@ import { shrinkPhoto } from "@/lib/photos";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Camera, ImagePlus, X, Loader2, ChevronLeft, ChevronRight, Paperclip } from "lucide-react";
+import { Camera, ImagePlus, ImageOff, X, Loader2, ChevronLeft, ChevronRight, Paperclip } from "lucide-react";
 
 // Photos of the paper order form - the same five allowed by the server.
 export const MAX_PHOTOS = 5;
@@ -224,6 +224,113 @@ export function PhotosButton({ order, canChange = false }) {
             <DialogDescription>Tap a photo to see it full size.</DialogDescription>
           </DialogHeader>
           {open && <OrderPhotos orderId={order.id} canChange={canChange} testid={`photos-${order.id}`} />}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * An order number that opens its order-form photos, full size, straight away -
+ * or says plainly that there are none. Viewing only; adding and removing stay
+ * on the paperclip and the order form. The list already says how many photos
+ * an order has (photo_count), so an order without any never asks the server.
+ */
+export function OrderIdPhotos({ order, className = "" }) {
+  const [open, setOpen] = useState(false);
+  const [photos, setPhotos] = useState(null); // null while loading
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (!open || !order.photo_count) return undefined;
+    let live = true;
+    const urls = [];
+    setPhotos(null);
+    setIndex(0);
+    (async () => {
+      try {
+        const list = await api.listOrderPhotos(order.id);
+        const withUrls = await Promise.all(
+          list.map(async (p) => {
+            const url = URL.createObjectURL(await api.photoBlob(p.id));
+            urls.push(url);
+            return { id: p.id, url };
+          })
+        );
+        if (live) setPhotos(withUrls);
+      } catch (e) {
+        if (live) {
+          setPhotos([]);
+          toast.error(apiErr(e));
+        }
+      }
+    })();
+    return () => {
+      live = false;
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [open, order.id, order.photo_count]);
+
+  const none = !order.photo_count || (photos && photos.length === 0);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        className={`font-mono font-semibold underline-offset-2 hover:text-primary hover:underline ${className}`}
+        title={order.photo_count ? "See the order form photos" : "No photo attached"}
+        data-testid={`order-id-photos-${order.id}`}
+      >
+        {order.id}
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl rounded-lg p-3 sm:p-5" data-testid={`order-photo-popup-${order.id}`}>
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              Order {order.id}
+              {photos && photos.length > 1 ? ` · photo ${index + 1} of ${photos.length}` : ""}
+            </DialogTitle>
+            <DialogDescription>{none ? "Photo of the paper order form" : "The paper order form"}</DialogDescription>
+          </DialogHeader>
+          {none ? (
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-14 text-center text-muted-foreground" data-testid="no-photo">
+              <ImageOff className="h-8 w-8 opacity-60" />
+              <div className="text-base font-semibold text-foreground">No photo attached</div>
+              <div className="text-sm">Nobody has added a picture of this order form yet.</div>
+            </div>
+          ) : !photos ? (
+            <div className="flex h-64 items-center justify-center text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <>
+              <img src={photos[index].url} alt={`Order form ${order.id}, photo ${index + 1}`} className="mx-auto max-h-[70dvh] w-auto max-w-full rounded-md" />
+              {photos.length > 1 && (
+                <div className="flex items-center justify-between gap-2">
+                  <Button variant="outline" size="sm" className="gap-1 rounded-md" disabled={index === 0} onClick={() => setIndex(index - 1)} data-testid="popup-photo-prev">
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </Button>
+                  <div className="flex gap-1.5">
+                    {photos.map((p, i) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setIndex(i)}
+                        className={`h-2.5 w-2.5 rounded-full ${i === index ? "bg-primary" : "bg-border"}`}
+                        aria-label={`Photo ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                  <Button variant="outline" size="sm" className="gap-1 rounded-md" disabled={index === photos.length - 1} onClick={() => setIndex(index + 1)} data-testid="popup-photo-next">
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </>

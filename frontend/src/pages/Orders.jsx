@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Loader } from "@/components/Loader";
+import { OrderIdPhotos } from "@/components/OrderPhotos";
 import { useMoreRows } from "@/components/MoreRows";
 import { useAuth } from "@/context/Auth";
 import { toast } from "sonner";
@@ -51,7 +52,8 @@ const Meter = ({ pct, bar = "w-16" }) => (
 //   total   gets a figure in the grand total row. `totalCell` overrides how it
 //           is worked out - a percentage cannot simply be added up.
 const COLUMNS = [
-  { key: "id", label: "Order ID", filter: "text", cell: (r) => <span className="font-mono font-semibold">{r.id}</span> },
+  // The order number opens its order-form photos, as on Sale Orders.
+  { key: "id", label: "Order ID", filter: "text", cell: (r) => <OrderIdPhotos order={r} /> },
   // The login that entered it. Orders from before that was recorded have none.
   { key: "punched_by", label: "Punched By", filter: "list" },
   { key: "order_date", label: "Order Date", filter: "date", date: true, cell: (r) => fmtDate(r.order_date) },
@@ -65,21 +67,22 @@ const COLUMNS = [
     cell: (r) => <span className={r.overdue ? "font-semibold text-amber-700" : ""}>{fmtDate(r.dispatch_date)}</span>,
   },
   { key: "customer", label: "Customer", filter: "list" },
-  { key: "city", label: "City", filter: "list" },
-  { key: "event", label: "Event", filter: "list" },
-  { key: "source", label: "Exhibition / Salesman", filter: "list" },
-  { key: "line", label: "Line", filter: "list" },
-  { key: "season", label: "Season", filter: "list" },
+  // next to the shop, so what was ordered is on screen without scrolling sideways
   {
     key: "brands",
     label: "Brands",
     filter: "text",
     cell: (r) => (
-      <span className="block max-w-[190px] truncate text-muted-foreground" title={r.brands}>
+      <span className="block max-w-[240px] truncate" title={r.brands}>
         {r.brands || "—"}
       </span>
     ),
   },
+  { key: "city", label: "City", filter: "list" },
+  { key: "event", label: "Event", filter: "list" },
+  { key: "source", label: "Exhibition / Salesman", filter: "list" },
+  { key: "line", label: "Line", filter: "list" },
+  { key: "season", label: "Season", filter: "list" },
   { key: "ordered", label: "Ordered", filter: "num", align: "right", total: true, cell: (r) => num(r.ordered) },
   { key: "dispatched", label: "Dispatched", filter: "num", align: "right", total: true, cell: (r) => <span className="text-muted-foreground">{num(r.dispatched)}</span> },
   { key: "pending", label: "Pending", filter: "num", align: "right", total: true, cell: (r) => <span className="font-semibold text-amber-700">{num(r.pending)}</span> },
@@ -336,7 +339,16 @@ export default function Orders() {
               source: (doorToDoor ? smName[o.salesman_id] : exhName[o.exhibition_id]) || "",
               line: (doorToDoor ? lineName[o.line_id] : "") || "",
               season: seasonName[o.season_id] || "",
-              brands: Array.from(new Set((o.items || []).map((it) => brandName[it.brand_id] || "Unknown"))).join(", "),
+              brands: Object.entries(
+                (o.items || []).reduce((acc, it) => {
+                  const n = brandName[it.brand_id] || "Unknown";
+                  acc[n] = (acc[n] || 0) + (Number(it.qty) || 0);
+                  return acc;
+                }, {})
+              )
+                .map(([n, q]) => `${n} × ${num(q)}`)
+                .join(", "),
+              photo_count: o.photo_count || 0,
               ordered: t.ordered_qty || 0,
               dispatched: t.dispatched_qty || 0,
               pending: t.pending_qty || 0,
