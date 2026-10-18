@@ -139,6 +139,7 @@ export default function Dashboard() {
     {
       name: "Open Orders",
       data: data?.open_orders || [],
+      stateOf: (o) => o.state,
       columns: [
         { key: "Sale Order", get: (o) => o.id },
         { key: "Customer", get: (o) => o.customer },

@@ -6,6 +6,12 @@ const loadXLSX = () => import("xlsx");
 
 const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002FA7" } };
 const ZEBRA_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F6FB" } };
+// Whole-row colours an export can ask for, by name: cancelled orders in red,
+// orders on hold in neon yellow (see ExportDialog).
+const ROW_STYLES = {
+  red: { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFFF0000" } }, font: { color: { argb: "FFFFFFFF" }, bold: true } },
+  neonYellow: { fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } }, font: { color: { argb: "FF000000" } } },
+};
 const thin = { style: "thin", color: { argb: "FFB6C0D0" } };
 const ALL_BORDERS = { top: thin, left: thin, bottom: thin, right: thin };
 
@@ -57,7 +63,7 @@ export function sheetDate(v) {
   return iso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
 }
 
-function addSheet(wb, name, rows) {
+function addSheet(wb, name, rows, rowStyles = []) {
   const ws = wb.addWorksheet(name.slice(0, 31), { views: [{ state: "frozen", ySplit: 1 }] });
   if (!rows || rows.length === 0) {
     ws.addRow(["No data"]);
@@ -77,14 +83,18 @@ function addSheet(wb, name, rows) {
 
   rows.forEach((r, i) => {
     const row = ws.addRow(headers.map((h) => r[h]));
-    row.eachCell((c) => {
+    const style = ROW_STYLES[rowStyles[i]];
+    // Every column, blanks included, so a coloured row is coloured right across.
+    headers.forEach((_, k) => {
+      const c = row.getCell(k + 1);
       c.border = ALL_BORDERS;
       c.alignment = { vertical: "middle" };
-      c.font = { size: 10 };
+      c.font = { size: 10, ...(style?.font || {}) };
       // Shown the same way the app shows it, and still a real date underneath,
       // so Excel can sort, filter and group by month on it.
       if (c.value instanceof Date) c.numFmt = DATE_FMT;
-      if (i % 2 === 1) c.fill = ZEBRA_FILL;
+      if (style) c.fill = style.fill;
+      else if (i % 2 === 1) c.fill = ZEBRA_FILL;
     });
   });
 
@@ -121,7 +131,7 @@ export async function downloadSheet(rows, sheetName, fileName) {
 export async function downloadMultiSheet(sheets, fileName) {
   const ExcelJS = await loadExcelJS();
   const wb = new ExcelJS.Workbook();
-  sheets.forEach((s) => addSheet(wb, s.name, s.rows));
+  sheets.forEach((s) => addSheet(wb, s.name, s.rows, s.rowStyles));
   await saveWorkbook(wb, fileName);
 }
 

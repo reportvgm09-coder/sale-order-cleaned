@@ -214,6 +214,7 @@ export default function SaleOrders() {
     {
       name: "Sale Orders",
       data: orders.flatMap((o) => (o.items || []).map((it) => ({ o, it }))),
+      stateOf: ({ o }) => o.state,
       columns: [
         { key: "Sale Order", get: (x) => x.o.id },
         { key: "Customer", get: (x) => nameOf("customers", x.o.customer_id) },
@@ -236,6 +237,7 @@ export default function SaleOrders() {
     {
       name: "Order Totals",
       data: orders,
+      stateOf: (o) => o.state,
       columns: [
         { key: "Sale Order", get: (o) => o.id },
         { key: "Customer", get: (o) => nameOf("customers", o.customer_id) },

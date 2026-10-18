@@ -131,6 +131,7 @@ export default function CustomerHistory() {
     {
       name: "Order Totals",
       data: filtered,
+      stateOf: (o) => o.state,
       columns: [
         { key: "Sale Order", get: (o) => o.id },
         { key: "Order Date", get: (o) => xlDate(o.order_date) },
@@ -149,6 +150,7 @@ export default function CustomerHistory() {
     {
       name: "Order Lines",
       data: filtered.flatMap((o) => (o.items || []).map((it) => ({ o, it }))),
+      stateOf: ({ o }) => o.state,
       columns: [
         { key: "Sale Order", get: (x) => x.o.id },
         { key: "Order Date", get: (x) => xlDate(x.o.order_date) },

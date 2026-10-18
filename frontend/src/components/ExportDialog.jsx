@@ -9,6 +9,13 @@ import { FileSpreadsheet, RotateCcw } from "lucide-react";
 
 const PREF_KEY = "ledger_export_columns";
 
+// Orders nobody is waiting on - cancelled - or that are paused - on hold - are
+// moved off an order sheet onto one of their own, coloured so they cannot be
+// mistaken for live orders: cancelled red, hold neon yellow.
+const SET_ASIDE = { cancelled: "red", hold: "neonYellow" };
+const STATE_NAME = { cancelled: "Cancelled", hold: "Hold" };
+const asideName = (name) => `${name} - Cancelled & Hold`.slice(0, 31);
+
 const loadPrefs = () => {
   try {
     return JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
@@ -33,6 +40,8 @@ const savePrefs = (all) => {
  *   login that may not see money, and a sheet left with no columns goes too.
  *   `data` is already flattened - one entry per spreadsheet row - so a sheet that
  *   lists order lines passes { order, item } pairs rather than orders.
+ *   `stateOf(record)`, on a sheet of orders or order lines, gives the order's
+ *   state; cancelled and hold rows then go on a sheet of their own (SET_ASIDE).
  *
  * What gets stored is the list of columns you turned OFF, not the ones you left on.
  * That way a column added to the app later shows up by default instead of being
@@ -102,16 +111,28 @@ export function ExportDialog({ open, onOpenChange, storageKey, fileName, sheets:
     if (chosen.length === 0) return toast.error("Pick at least one column to export");
     setBusy(true);
     try {
-      const out = chosen.map(({ sheet, cols }) => ({
-        name: sheet.name,
-        rows: (sheet.data || []).map((record, i) => {
+      const out = [];
+      chosen.forEach(({ sheet, cols }) => {
+        const toRow = (record, i) => {
           const row = {};
           cols.forEach((c) => {
             row[c.key] = c.get(record, i);
           });
           return row;
-        }),
-      }));
+        };
+        const data = sheet.data || [];
+        const aside = sheet.stateOf ? data.filter((r) => SET_ASIDE[sheet.stateOf(r)]) : [];
+        const keep = aside.length ? data.filter((r) => !SET_ASIDE[sheet.stateOf(r)]) : data;
+        out.push({ name: sheet.name, rows: keep.map(toRow) });
+        if (aside.length) {
+          out.push({
+            name: asideName(sheet.name),
+            // Spelled out as well as coloured, for a printout in black and white.
+            rows: aside.map((r, i) => ({ State: STATE_NAME[sheet.stateOf(r)], ...toRow(r, i) })),
+            rowStyles: aside.map((r) => SET_ASIDE[sheet.stateOf(r)]),
+          });
+        }
+      });
       await downloadMultiSheet(out, fileName);
       savePrefs({ ...loadPrefs(), [storageKey]: state });
       toast.success(`Exported ${totalCols} column${totalCols === 1 ? "" : "s"}`);
@@ -134,6 +155,13 @@ export function ExportDialog({ open, onOpenChange, storageKey, fileName, sheets:
         </DialogHeader>
 
         <div className="space-y-4">
+          {sheets.some((s) => s.stateOf && (s.data || []).some((r) => SET_ASIDE[s.stateOf(r)])) && (
+            <p className="rounded-sm border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground" data-testid="export-aside-note">
+              Cancelled and on-hold orders go on a sheet of their own - cancelled in{" "}
+              <span className="rounded-sm bg-[#ff0000] px-1 font-semibold text-white">red</span>, hold in{" "}
+              <span className="rounded-sm bg-[#ffff00] px-1 text-black">neon yellow</span>.
+            </p>
+          )}
           {sheets.map((s) => {
             const rec = recFor(s.name);
             const onCount = s.columns.filter((c) => !rec.off.includes(c.key)).length;

@@ -463,6 +463,7 @@ export default function Orders() {
     {
       name: "Orders",
       data: sorted,
+      stateOf: (r) => r.state_key,
       // Every column is offered, including any hidden on screen - the export
       // dialog has its own tick list and remembers it separately.
       columns: columns.map((c) => ({

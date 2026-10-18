@@ -192,6 +192,7 @@ export default function Reports() {
     {
       name: "Detail",
       data: sorted,
+      stateOf: (r) => r.state,
       columns: [
         { key: "Sale Order", get: (r) => r.sale_order_id },
         { key: "Customer", get: (r) => r.customer },

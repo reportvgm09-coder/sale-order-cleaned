@@ -187,6 +187,7 @@ export default function BrandHistory() {
     {
       name: "Orders",
       data: filtered,
+      stateOf: (o) => o.state,
       columns: [
         { key: "Sale Order", get: (o) => o.id },
         { key: "Order Date", get: (o) => xlDate(o.order_date) },

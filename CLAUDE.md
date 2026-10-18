@@ -343,6 +343,17 @@ amounts included, sent to someone else's servers. It also slowed every page
 and held up loading on a PC with no internet. Both are gone; do not add
 analytics back without the owner asking for it.
 
+### Exports put cancelled and hold orders on a sheet of their own
+
+A sheet of orders or order lines passes `stateOf(record)` to `ExportDialog`;
+its cancelled and hold rows then leave that sheet for one right after it named
+"<sheet> - Cancelled & Hold", cancelled rows **red** (white bold text) and hold
+rows **neon yellow** (`ROW_STYLES` in `lib/excel.js`, coloured across every
+column), with a State column first so a black-and-white printout still says
+which is which. 50% and open orders stay where they were. Summary and pivot
+sheets have no `stateOf` and are untouched - their totals are what they always
+were. A new order export should pass `stateOf` too.
+
 ### Export column memory stores what you turned OFF
 
 `ExportDialog` saves the **excluded** columns, not the included ones. If it
