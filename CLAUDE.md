@@ -264,6 +264,13 @@ below a table that can be hundreds of rows tall. It reaches the scrolling
 element through `table.parentElement` - the `Table` component owns that wrapper
 and does not expose it.
 
+**Punched By** is the login that entered the order: `punched_by` on every
+order the API returns, worked out by `punched_by_names()` from `created_by`
+(a user id, or `owner` for the APP_USERNAME login). Orders from before
+`created_by` was recorded show a dash; a login since deleted reads "Removed
+login" rather than a bare id. It is who *typed it in*, not who sold it - that
+is the Exhibition / Salesman column.
+
 `pctOf()` is the only place the dispatched percentage is worked out, so the bar
 and the number printed beside it cannot drift apart.
 

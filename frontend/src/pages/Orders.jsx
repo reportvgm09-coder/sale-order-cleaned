@@ -52,6 +52,8 @@ const Meter = ({ pct, bar = "w-16" }) => (
 //           is worked out - a percentage cannot simply be added up.
 const COLUMNS = [
   { key: "id", label: "Order ID", filter: "text", cell: (r) => <span className="font-mono font-semibold">{r.id}</span> },
+  // The login that entered it. Orders from before that was recorded have none.
+  { key: "punched_by", label: "Punched By", filter: "list" },
   { key: "order_date", label: "Order Date", filter: "date", date: true, cell: (r) => fmtDate(r.order_date) },
   {
     key: "dispatch_date",
@@ -324,6 +326,7 @@ export default function Orders() {
             const doorToDoor = (o.event_type || "exhibition") === "door_to_door";
             return {
               id: o.id,
+              punched_by: o.punched_by || "",
               customer_id: o.customer_id,
               order_date: o.order_date || "",
               dispatch_date: o.dispatch_date || "",

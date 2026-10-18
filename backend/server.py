@@ -745,21 +745,45 @@ async def photo_counts(order_ids):
     return out
 
 
+async def punched_by_names(orders):
+    """Who entered each order, as a name: created_by holds a user id, or
+    "owner" for the APP_USERNAME login. Orders from before created_by existed
+    have none and come back as None; a login since deleted is said so, rather
+    than shown as a bare id."""
+    ids = {o.get("created_by") for o in orders} - {None, OWNER_ID}
+    users = {}
+    if ids:
+        users = {u["id"]: u["username"] for u in await fetch_all(
+            db.users.find({"id": {"$in": list(ids)}}, {"_id": 0, "id": 1, "username": 1}), "users")}
+
+    def name(created_by):
+        if not created_by:
+            return None
+        if created_by == OWNER_ID:
+            return AUTH_USERNAME
+        return users.get(created_by, "Removed login")
+    return name
+
+
 async def enrich_order(order):
-    dispatched, photos = await asyncio.gather(dispatched_by_brand(order["id"]), photo_counts([order["id"]]))
+    dispatched, photos, who = await asyncio.gather(
+        dispatched_by_brand(order["id"]), photo_counts([order["id"]]), punched_by_names([order]))
     totals = compute_order_totals(order, dispatched)
     return {**order, "state": order.get("state") or "open", "photo_count": photos.get(order["id"], 0),
+            "punched_by": who(order.get("created_by")),
             "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}}
 
 
 async def enrich_orders(orders):
     """Bulk version of enrich_order for lists - one dispatch query total instead of one per order."""
     ids = [o["id"] for o in orders]
-    dispatched_map, photos = await asyncio.gather(dispatched_by_brand_bulk(ids), photo_counts(ids))
+    dispatched_map, photos, who = await asyncio.gather(
+        dispatched_by_brand_bulk(ids), photo_counts(ids), punched_by_names(orders))
     result = []
     for o in orders:
         totals = compute_order_totals(o, dispatched_map.get(o["id"], {}))
         result.append({**o, "state": o.get("state") or "open", "photo_count": photos.get(o["id"], 0),
+                       "punched_by": who(o.get("created_by")),
                        "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}})
     return result
 
