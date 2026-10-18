@@ -314,6 +314,38 @@ busy. Under `prefers-reduced-motion` it is the still logo. The desktop app's
 `loading.html` copies the same animation, so the hand-over to the app does not
 jump. It replaced a playable Space Invaders.
 
+### The look: Veena green, sticky tables, a chart dashboard
+
+**Colours** are the theme variables in `index.css`: primary is the logo's
+banyan green taken a shade deeper (`141 70% 27%`) so white text on it passes
+contrast, on neutrals with a faint green cast. `--radius` is 0.625rem - at the
+old 0.25rem every `rounded-sm` worked out square. Excel headers use the same
+green (`HEADER_FILL`). Status colours keep their meanings and are not brand
+colours: amber pending, blue partial, green done, red cancelled.
+
+**Tables** (`ui/table.jsx` + `.ledger-table` in `index.css`) scroll inside
+their own box on a laptop, so the heading row sticks to the top and the grand
+total to the bottom; a phone scrolls the page instead. The total row is found
+by its `data-testid` ending `total-row` or `-total` - **keep that naming on a
+new total row** or it will not stick. Borders are separate, not collapsed,
+because collapsed borders vanish from a cell once it sticks. The Orders grid
+adds `sticky-first`, keeping Order ID in view sideways; its stuck cell copies
+the row's state tint (listed in `index.css` - add one if `orderState.js` gains
+a colour).
+
+**Dashboard charts** (`components/DashboardCharts.jsx`, recharts): ordered vs
+dispatched by month, where the orders stand, and top-ten pending by brand,
+customer and season, each with a Chart / All switch to the full list. Their
+colours went through the dataviz validator: ordered `#2F6FB0`, dispatched
+`#1F8A47`, pending `#D97706` - amber, because pending is amber everywhere else
+and green would read as done. `/dashboard` sends `by_month`, `status_mix`,
+`ordered_pieces` and `dispatched_pieces` for them - pieces and counts only,
+so every login gets the same charts. On a phone the filters fold behind a
+Filters button and the tiles sit two to a row.
+
+On the salesman's order cards, an order he cannot change says why in words
+instead of showing greyed buttons - a phone has no hover to explain them.
+
 ### Long lists draw 100 rows at a time
 
 Drawing every row was what made the app slow: about 1,000 orders came to some
@@ -459,16 +491,24 @@ other address back to the first. Hiding pages is not the protection, though. On 
 - He sees **no money** except his own expense vouchers - see "Only admin and
   editor see money" above.
 
-**His Reports tab** (`pages/MyReports.jsx`) - a pivot plus four fixed
-summaries - is worked out in the browser from `/sale-orders`, which is already
-narrowed to his own orders. So it needed no new endpoint and opens nothing new.
-It is quantities only: orders, pieces ordered, sent and still to send.
+**His Reports tab** (`pages/MyReports.jsx`) is three screens, built for a
+phone: **Today's Work** (one day - today unless he steps back - with its
+orders, shops, pieces, brands and his own expenses, and a seven-day strip to
+jump between days), **Line Ledger** (a card per trip, and per exhibition, with
+days worked, orders, shops, pieces sent and still to send, and what the trip
+cost him) and **Brand Ledger** (each brand's pieces ordered / sent / to send,
+opening to the shops holding it). It replaced a pivot nobody used.
 
-- **Order-level figures cannot be split by brand.** The order list carries
-  sent and pending per order, not per brand, so those measures are disabled
-  whenever brand is on either axis rather than shown wrong. The order count is
-  kept as a set of ids, so an order carrying two brands is one order in every
-  total.
+- **Worked out in the browser** from `/sale-orders` and `/expenses`, both
+  already narrowed to him - so it needed no new endpoint and opens nothing.
+- **Per-brand sent and to-send come from `brand_qty`** on every order the API
+  returns (`brand_qty()` in `server.py`): pieces per brand, with to-send taken
+  from `compute_order_totals`, so a cancelled order owes nothing and the brand
+  split always adds up to the order's own totals.
+- **Pieces, plus his own expense money only.** Expense amounts reach him
+  because `/api/expenses` is in `SALESMAN_OWN_MONEY`; nothing else here has a
+  money field to strip.
+- Cancelled orders are left out of every count.
 
 ---
 

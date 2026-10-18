@@ -765,12 +765,26 @@ async def punched_by_names(orders):
     return name
 
 
+def brand_qty(order, dispatched, totals):
+    """Pieces per brand on one order: ordered, sent and still to send. What the
+    brand ledgers need, since an order's own totals cannot be split by brand.
+    Quantities only - nothing here is money. Still-to-send comes from
+    compute_order_totals, so a cancelled order owes nothing here either."""
+    ordered = {}
+    for it in order.get("items", []):
+        ordered[it["brand_id"]] = ordered.get(it["brand_id"], 0) + (it.get("qty") or 0)
+    pending = totals["pending_by_brand"]
+    return [{"brand_id": bid, "ordered_qty": oq, "dispatched_qty": min(dispatched.get(bid, 0), oq),
+             "pending_qty": pending.get(bid, 0)} for bid, oq in ordered.items()]
+
+
 async def enrich_order(order):
     dispatched, photos, who = await asyncio.gather(
         dispatched_by_brand(order["id"]), photo_counts([order["id"]]), punched_by_names([order]))
     totals = compute_order_totals(order, dispatched)
     return {**order, "state": order.get("state") or "open", "photo_count": photos.get(order["id"], 0),
             "punched_by": who(order.get("created_by")),
+            "brand_qty": brand_qty(order, dispatched, totals),
             "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}}
 
 
@@ -781,9 +795,11 @@ async def enrich_orders(orders):
         dispatched_by_brand_bulk(ids), photo_counts(ids), punched_by_names(orders))
     result = []
     for o in orders:
-        totals = compute_order_totals(o, dispatched_map.get(o["id"], {}))
+        dispatched = dispatched_map.get(o["id"], {})
+        totals = compute_order_totals(o, dispatched)
         result.append({**o, "state": o.get("state") or "open", "photo_count": photos.get(o["id"], 0),
                        "punched_by": who(o.get("created_by")),
+                       "brand_qty": brand_qty(o, dispatched, totals),
                        "totals": {k: v for k, v in totals.items() if k != "pending_by_brand"}})
     return result
 
